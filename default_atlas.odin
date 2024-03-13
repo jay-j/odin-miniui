@@ -1,4 +1,4 @@
-package microui
+package miniui
 
 DEFAULT_ATLAS_WIDTH          :: 128
 DEFAULT_ATLAS_HEIGHT         :: 128

@@ -2,6 +2,7 @@
 ** Original work: Copyright (c) 2020 rxi
 ** Modified work: Copyright (c) 2020 oskarnp
 ** Modified work: Copyright (c) 2021 gingerBill
+** Modified work: Copyright (c) 2024 robot_jay
 **
 ** Permission is hereby granted, free of charge, to any person obtaining a copy
 ** of this software and associated documentation files (the "Software"), to
@@ -22,7 +23,7 @@
 ** IN THE SOFTWARE.
 */
 
-package microui
+package miniui
 
 import "core:fmt"
 import "core:sort"
@@ -30,18 +31,18 @@ import "core:strings"
 import "core:strconv"
 import "core:math"
 
-COMMAND_LIST_SIZE    :: #config(MICROUI_COMMAND_LIST_SIZE,    256 * 1024)
-ROOT_LIST_SIZE       :: #config(MICROUI_ROOT_LIST_SIZE,       32)
-CONTAINER_STACK_SIZE :: #config(MICROUI_CONTAINER_STACK_SIZE, 32)
-CLIP_STACK_SIZE      :: #config(MICROUI_CLIP_STACK_SIZE,      32)
-ID_STACK_SIZE        :: #config(MICROUI_ID_STACK_SIZE,        32)
-LAYOUT_STACK_SIZE    :: #config(MICROUI_LAYOUT_STACK_SIZE,    16)
-CONTAINER_POOL_SIZE  :: #config(MICROUI_CONTAINER_POOL_SIZE,  48)
-TREENODE_POOL_SIZE   :: #config(MICROUI_TREENODE_POOL_SIZE,   48)
-MAX_WIDTHS           :: #config(MICROUI_MAX_WIDTHS,           16)
-SLIDER_FMT           :: #config(MICROUI_SLIDER_FMT,           "%.2f")
-MAX_FMT              :: #config(MICROUI_MAX_FMT,              127)
-MAX_TEXT_STORE       :: #config(MICROUI_MAX_TEXT_STORE,       1024)
+COMMAND_LIST_SIZE    :: #config(MINIUI_COMMAND_LIST_SIZE,    256 * 1024)
+ROOT_LIST_SIZE       :: #config(MINIUI_ROOT_LIST_SIZE,       32)
+CONTAINER_STACK_SIZE :: #config(MINIUI_CONTAINER_STACK_SIZE, 32)
+CLIP_STACK_SIZE      :: #config(MINIUI_CLIP_STACK_SIZE,      32)
+ID_STACK_SIZE        :: #config(MINIUI_ID_STACK_SIZE,        32)
+LAYOUT_STACK_SIZE    :: #config(MINIUI_LAYOUT_STACK_SIZE,    16)
+CONTAINER_POOL_SIZE  :: #config(MINIUI_CONTAINER_POOL_SIZE,  48)
+TREENODE_POOL_SIZE   :: #config(MINIUI_TREENODE_POOL_SIZE,   48)
+MAX_WIDTHS           :: #config(MINIUI_MAX_WIDTHS,           16)
+SLIDER_FMT           :: #config(MINIUI_SLIDER_FMT,           "%.2f")
+MAX_FMT              :: #config(MINIUI_MAX_FMT,              127)
+MAX_TEXT_STORE       :: #config(MINIUI_MAX_TEXT_STORE,       1024)
 
 Clip :: enum u32 {
 	NONE,
