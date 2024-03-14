@@ -306,7 +306,7 @@ default_draw_frame :: proc(ctx: ^Context, rect: Rect, colorid: Color_Type) {
 	}
 }
 
-init :: proc(ctx: ^Context) {
+im_init :: proc(ctx: ^Context) {
 	ctx^ = {} // zero memory
 	ctx.draw_frame  = default_draw_frame
 	ctx._style      = default_style
