@@ -28,12 +28,15 @@ Shader :: struct {
 
 
 // Initialize everything to do with the GUI: microui and GPU shaders.
-init :: proc() -> Gui {
-	// Need the result to be used and passed around. Internally calls microui.init()
-	gui := Gui{}
+// CAUTION: bad stuff seems to happen if this is on the stack!
+init :: proc(allocator := context.allocator) -> ^Gui {
+	context.allocator = allocator
 
-	gpu_init_default_atlas(&gui)
-	gpu_init_shader(&gui)
+	// Need the result to be used and passed around. Internally calls microui.init()
+	gui : ^Gui = new(Gui, context.allocator)
+
+	gpu_init_default_atlas(gui)
+	gpu_init_shader(gui)
 
 	im_init(&gui.ctx)
 	gui.ctx.text_width = default_atlas_text_width
@@ -340,6 +343,8 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 @(private)
 gpu_init_default_atlas :: proc(gui: ^Gui) {
 
+	// The atlas is expanded in CPU-memory to form a full texture for the GPU. But after loading to the GPU,
+	// the CPU memory isn't required anymore.
 	lenpixels := DEFAULT_ATLAS_WIDTH * DEFAULT_ATLAS_HEIGHT
 	pixels := make([^]u8, 4 * lenpixels, allocator = context.temp_allocator)
 	for i := 0; i < lenpixels; i += 1 {

@@ -631,14 +631,12 @@ input_key_up :: proc(ctx: ^Context, key: Key) {
 }
 
 input_text :: proc(ctx: ^Context, text: string) {
-	fmt.printf("Got an input string! %v\n", text)
-	n := strings.write_string(&ctx.text_input, text)
-	assert(n == len(text)) // nocheckin
+	strings.write_string(&ctx.text_input, text)
 }
 
 
 // Pass mouse inputs from SDL to Miniui
-input_sdl_mouse :: proc(ctx: ^Context, event: SDL.Event) {
+input_sdl_events :: proc(ctx: ^Context, event: SDL.Event) {
 	event := event
 
 	// Pass mouse coordinates to GUI, even if mouse is not over a microui window
@@ -1143,9 +1141,7 @@ textbox_raw :: proc(
 		}
 	}
 
-	// by this point the string has gone bad. the data is bad, not the display
 	textstr := string(textbuf[:textlen^])
-	fmt.printf("textstr = %v\n", textstr)
 
 	/* draw */
 	draw_control_frame(ctx, id, r, .BASE, opt)
@@ -1248,6 +1244,7 @@ slider :: proc(
 	return
 }
 
+// CAUTION: The format string is for interpreting the value, not for adding a label
 number :: proc(
 	ctx: ^Context,
 	value: ^Real,
@@ -1263,7 +1260,6 @@ number :: proc(
 
 	/* handle text input mode */
 	if number_textbox(ctx, value, base, id, fmt_string) {
-		// fmt.printf("number textbox return TRUE\n")
 		return
 	}
 
