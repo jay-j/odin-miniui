@@ -1112,7 +1112,6 @@ textbox_raw :: proc(
 ) -> (
 	res: Result_Set,
 ) {
-	fmt.printf("in textbox_raw()\n")
 	update_control(ctx, id, r, opt | {.HOLD_FOCUS})
 
 	if ctx.focus_id == id {

@@ -43,7 +43,7 @@ main :: proc() {
 				}
 			}
 
-			mu.input_sdl_mouse(&gui.ctx, event)
+			mu.input_sdl_events(&gui.ctx, event)
 
 		}
 
@@ -71,7 +71,7 @@ main :: proc() {
 
 				@(static)
 				number: f32 = 3
-				mu.number(&gui.ctx, &number, 0.5, "num = %.2f")
+				mu.number(&gui.ctx, &number, 0.5, "%.2f")
 
 				@(static)
 				number2: f32 = 11
@@ -79,15 +79,15 @@ main :: proc() {
 				// base := mu.layout_next(&gui.ctx) // ??
 				// mu.number_textbox(&gui.ctx, &number2, base, id, "%.3f")
 
-				mu.slider(&gui.ctx, &number2, -20, 20, 0.5, "slider = %.1f")
+				mu.slider(&gui.ctx, &number2, -20, 20, 0.5, "%.1f")
 
 			}
 
 			mu.end(&gui.ctx) 
 		}
 
-		mu.draw_prepare(&gui, 1200, 800)
-		mu.draw(&gui, context.temp_allocator)
+		mu.draw_prepare(gui, 1200, 800)
+		mu.draw(gui, context.temp_allocator)
 		SDL.GL_SwapWindow(app.window)
 
 		free_all(context.temp_allocator)
