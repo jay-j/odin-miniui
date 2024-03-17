@@ -8,9 +8,6 @@ import "core:time"
 import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
 
-WINDOW_X: i32 : SDL.WINDOWPOS_UNDEFINED
-WINDOW_Y: i32 : SDL.WINDOWPOS_UNDEFINED
-WINDOW_FLAGS :: SDL.WINDOW_SHOWN | SDL.WINDOW_OPENGL | SDL.WINDOW_RESIZABLE
 
 App :: struct {
 	window:                  ^SDL.Window,
@@ -39,18 +36,55 @@ main :: proc() {
 			if event.type == SDL.EventType.QUIT {
 				break main_loop
 			}
+			if event.type == SDL.EventType.KEYDOWN {
+				#partial switch event.key.keysym.scancode {
+				case .ESCAPE:
+					break main_loop
+				}
+			}
+
+			mu.input_sdl_mouse(&gui.ctx, event)
+
 		}
 
 		gl.ClearColor(0.5, 0.7, 1.0, 0.0) // TODO what is the right value?
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-		mu.begin(&gui.ctx)
+		{
+			mu.begin(&gui.ctx)
+			// defer mu.end(&gui.ctx) // NOTE: must mu.end() before calling rendering
 
-		if mu.window(&gui.ctx, "test window", {0, 0, 200, 400}) {
-			mu.label(&gui.ctx, "hello world")
+
+			if mu.window(&gui.ctx, "test window", {0, 0, 200, 400}) {
+				mu.label(&gui.ctx, "hello world")
+
+				if .SUBMIT in mu.button(&gui.ctx, "dis a button", icon = .CHECK) {
+					fmt.printf("button was pressed\n")
+				}
+
+				@(static)
+				check: bool = false
+				mu.checkbox(&gui.ctx, "here a checkbox", &check)
+				if check {
+					mu.label(&gui.ctx, "true")
+				}
+
+				@(static)
+				number: f32 = 3
+				mu.number(&gui.ctx, &number, 0.5, "num = %.2f")
+
+				@(static)
+				number2: f32 = 11
+				// id := mu.get_id(&gui.ctx, uintptr(number2)) // ? todo these are kind of annoying out here?
+				// base := mu.layout_next(&gui.ctx) // ??
+				// mu.number_textbox(&gui.ctx, &number2, base, id, "%.3f")
+
+				mu.slider(&gui.ctx, &number2, -20, 20, 0.5, "slider = %.1f")
+
+			}
+
+			mu.end(&gui.ctx) 
 		}
-
-		mu.end(&gui.ctx)
 
 		mu.draw_prepare(&gui, 1200, 800)
 		mu.draw(&gui, context.temp_allocator)
@@ -67,13 +101,13 @@ gfx_window_setup :: proc(window_width, window_height: i32) {
 	// Basic opening of the SDL window and gathering OpenGL
 	SDL.Init(SDL.INIT_VIDEO)
 
-	app.window = SDL.CreateWindow(
+ 	app.window = SDL.CreateWindow(
 		"MINIUI EXAMPLE",
-		WINDOW_X,
-		WINDOW_Y,
+		SDL.WINDOWPOS_CENTERED_DISPLAY(1),
+		SDL.WINDOWPOS_UNDEFINED,
 		window_width,
 		window_height,
-		WINDOW_FLAGS,
+		SDL.WINDOW_SHOWN | SDL.WINDOW_OPENGL | SDL.WINDOW_RESIZABLE,
 	)
 
 	app.gl_context = SDL.GL_CreateContext(app.window)
