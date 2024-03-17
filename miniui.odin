@@ -344,6 +344,7 @@ begin :: proc(ctx: ^Context) {
 	ctx.frame += 1
 }
 
+// Finish accepting UI commands. Call this before rendering.
 end :: proc(ctx: ^Context) {
 	/* check stacks */
 	assert(ctx.container_stack.idx == 0)
