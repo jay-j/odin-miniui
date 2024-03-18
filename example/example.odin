@@ -8,6 +8,8 @@ import "core:time"
 import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
 
+import "core:strings"
+import stbi "vendor:stb/image"
 
 App :: struct {
 	window:                  ^SDL.Window,
@@ -28,6 +30,8 @@ main :: proc() {
 
 	// Init from miniui
 	gui := mu.init()
+
+	tex_demo: mu.Texture = setup_texture("texture_demo.png")
 
 	main_loop: for {
 		app_framerate_control()
@@ -85,6 +89,17 @@ main :: proc() {
 				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
+			if mu.window(&gui.ctx, "image here", {700, 200, 300, 300}) {
+				mu.label(&gui.ctx, "image below here:")
+				mu.image(
+					&gui.ctx,
+					tex_demo,
+					mu.Rect{0, 0, tex_demo.width, tex_demo.height},
+					mu.Rect{0, 0, 128, 128},
+				)
+				mu.label(&gui.ctx, "image above here")
+			}
+
 			all_windows(&gui.ctx)
 
 		}
@@ -100,6 +115,55 @@ main :: proc() {
 
 		free_all(context.temp_allocator)
 	}
+}
+
+setup_texture :: proc(filename: string, allocator := context.allocator) -> (tex: mu.Texture) {
+	context.allocator = allocator
+
+	texture_raw_channels: i32
+	texture_raw: [^]u8 = stbi.load(
+		strings.clone_to_cstring(filename, allocator = context.temp_allocator),
+		&tex.width,
+		&tex.height,
+		&texture_raw_channels,
+		4,
+	)
+	if texture_raw == nil {
+		// TODO better error handling
+		assert(false)
+	}
+	fmt.printf(
+		"Loaded image from %v is %v x %v with %v channels\n",
+		filename,
+		tex.width,
+		tex.height,
+		texture_raw_channels,
+	)
+
+	tex.inv_width = 1.0 / f32(tex.width)
+	tex.inv_height = 1.0 / f32(tex.height)
+
+	// Get the texture pushed to the GPU
+	gl.GenTextures(1, &tex.texture_id)
+	gl.BindTexture(gl.TEXTURE_2D, tex.texture_id)
+
+	gl.TexImage2D(
+		target = gl.TEXTURE_2D,
+		level = 0,
+		internalformat = gl.RGBA,
+		width = tex.width,
+		height = tex.height,
+		border = 0,
+		format = gl.RGBA,
+		type = gl.UNSIGNED_BYTE,
+		pixels = rawptr(texture_raw),
+	)
+
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+	gl.BindTexture(gl.TEXTURE_2D, 0)
+
+	return
 }
 
 

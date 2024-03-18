@@ -5,16 +5,17 @@ import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
 
 Gui :: struct {
-	ctx:              Context,
-	bg:               Color,
+	ctx:             Context,
+	bg:              Color,
 
 	// current window dimensions (px) provided to draw_prepare()
-	window_width:     i32,
-	window_height:    i32,
+	window_width:    i32,
+	window_height:   i32,
 
 	// standard_atlas is the one that comes bundled with microui/miniui
-	default_atlas_id: u32,
-	shader:           Shader,
+	atlas:           Texture,
+	shader:          Shader,
+	last_texture_id: u32,
 }
 
 
@@ -65,11 +66,35 @@ draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
 	gl.VertexAttribPointer(2, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, uv))
 
-	// Don't bind the default atlas texture anymore here, do it on demand when rendering to 
-	// gl.BindTexture(gl.TEXTURE_2D, gui.default_atlas_id)
+	// Bind this texture by default
+	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
+	gui.last_texture_id = gui.atlas.texture_id
 
 	gui.window_width = window_width
 	gui.window_height = window_height
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+// User Texture
+Texture :: struct {
+	texture_id: u32, // OpenGL
+	width:      i32,
+	height:     i32,
+	inv_width:  f32,
+	inv_height: f32,
+}
+
+
+texture_create :: proc(id: u32, width, height: i32) -> Texture {
+	tex := Texture{}
+	tex.texture_id = id
+	tex.width = width
+	tex.inv_width = 1.0 / f32(width)
+
+	tex.height = height
+	tex.inv_height = 1.0 / f32(height)
+	return tex
 }
 
 
@@ -82,7 +107,9 @@ gpu_render_texture :: proc(
 	indices: ^[dynamic]u16,
 	dst: ^Rect,
 	src: Rect,
+	tex: Texture,
 	color: Color,
+	scale_unity: bool = true,
 ) {
 	// Build and render a textured quad out of two triangles.
 	// src and dst are in units of pixels, because this is what microui is using
@@ -95,14 +122,24 @@ gpu_render_texture :: proc(
 	//
 	// p(0,1000) g(-1,-1) uv(0,0)                   p(1000,1000) g(+1,-1) uv(1,0)
 
-	// These are for microui specifically
-	dst.w = src.w
-	dst.h = src.h
+	// Only change what texture the GPU is looking at as needed
+	if gui.last_texture_id != tex.texture_id {
+		draw_flush(gui, vertices, indices) // TODO can this be removed even though texture is changing?
+		gl.BindTexture(gl.TEXTURE_2D, tex.texture_id)
+		gui.last_texture_id = tex.texture_id
+	}
+
+	// Display 1:1. Required for microui, this also controls character advance.
+	if scale_unity {
+		dst.w = src.w
+		dst.h = src.h
+	}
 
 	// specify vertex position in screenspace coordiantes (assume the camera gets sorted out)
 	// specify vertex UV coordinates based on where to pull from the texture atlas
 	// specify vertex color (tint) based on the mu color
 
+	// This is inverse tinting... so giving color=0 will just cause color not to change? // TODO check the shader too
 	v_color: glm.vec4 =  {
 		1.0 - f32(color.r) / 255.0,
 		1.0 - f32(color.g) / 255.0,
@@ -121,7 +158,7 @@ gpu_render_texture :: proc(
 			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
 			zpos,
 		},
-		uv = {f32(src.x) / f32(DEFAULT_ATLAS_WIDTH), f32(src.y) / f32(DEFAULT_ATLAS_HEIGHT)},
+		uv = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 	v_left_bottom: Vertex = {
@@ -130,10 +167,7 @@ gpu_render_texture :: proc(
 			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
 			zpos,
 		},
-		uv =  {
-			f32(src.x) / f32(DEFAULT_ATLAS_WIDTH),
-			f32(src.y + src.h) / f32(DEFAULT_ATLAS_HEIGHT),
-		},
+		uv = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_bottom: Vertex = {
@@ -143,8 +177,8 @@ gpu_render_texture :: proc(
 			zpos,
 		},
 		uv =  {
-			f32(src.x + src.w) / f32(DEFAULT_ATLAS_WIDTH),
-			f32(src.y + src.h) / f32(DEFAULT_ATLAS_HEIGHT),
+			f32(src.x + src.w) * tex.inv_width,
+			f32(src.y + src.h) * tex.inv_height,
 		},
 		col = v_color,
 	}
@@ -156,8 +190,8 @@ gpu_render_texture :: proc(
 			zpos,
 		},
 		uv =  {
-			f32(src.x + src.w) / f32(DEFAULT_ATLAS_WIDTH),
-			f32(src.y) / f32(DEFAULT_ATLAS_HEIGHT),
+			f32(src.x + src.w) * tex.inv_width,
+			f32(src.y) * tex.inv_height,
 		},
 		col = v_color,
 	}
@@ -230,9 +264,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
 
-	// TODO track which texture the GPU is currently using - so that we can choose the right one per call,
-	// but don't make lots of GPU calls to constantly set the texture over again.
-	gl.BindTexture(gl.TEXTURE_2D, gui.default_atlas_id)
 	gl.Enable(gl.TEXTURE_2D)
 	// get information about the current maximum viewport
 
@@ -252,7 +283,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
 				// fmt.printf("Text color: %v", cmd.color)
-				gpu_render_texture(gui, &vertices, &indices, &dst, src, cmd.color)
+				gpu_render_texture(gui, &vertices, &indices, &dst, src, gui.atlas, cmd.color)
 				dst.x += dst.w
 			}
 
@@ -287,21 +318,43 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
-			gpu_render_texture(gui, &vertices, &indices, &Rect{x, y, 0, 0}, src, cmd.color)
+			gpu_render_texture(
+				gui,
+				&vertices,
+				&indices,
+				&Rect{x, y, 0, 0},
+				src,
+				gui.atlas,
+				cmd.color,
+			)
 
 		case ^Command_Clip:
-			// fmt.printf("  clip: %v\n", cmd.rect)
-			// This case no longer seems necessary with the shift to OpenGl Calls. I had thought
-			// this should alter an offset coordinate system to be used by gpu_render_texture, but
-			// that breaks things. So this codepath is activated now but ignored with seemingly no problem.
+		// fmt.printf("  clip: %v\n", cmd.rect)
+		// This case no longer seems necessary with the shift to OpenGl Calls. I had thought
+		// this should alter an offset coordinate system to be used by gpu_render_texture, but
+		// that breaks things. So this codepath is activated now but ignored with seemingly no problem.
 
 		case ^Command_Jump:
 			// This is handled by mu.next_command_iterator() to call commands in the right sequence
 			// and should not be seen by this codepath.
 			panic("Graphics drawing encountered mu.Command_Jump!")
+
+		case ^Command_Image:
+			// draw_flush(gui, &vertices, &indices) // TODO can this be removed even though texture is changing?
+			// TODO if so it would have to be flushed again after the screen is drawn?
+
+			gpu_render_texture(
+				gui,
+				&vertices,
+				&indices,
+				&Rect{cmd.dst.x, cmd.dst.y, cmd.dst.w, cmd.dst.h}, // TODO need to give it some space!
+				cmd.src,
+				cmd.tex,
+				cmd.color,
+				scale_unity = false,
+			)
 		}
 
-		// Case: Image (for custom images that aren't from the atlas)
 
 	}
 
@@ -338,8 +391,10 @@ gpu_init_default_atlas :: proc(gui: ^Gui) {
 		pixels[4 * i + 3] = default_atlas_alpha[i]
 	}
 
-	gl.GenTextures(1, &gui.default_atlas_id)
-	gl.BindTexture(gl.TEXTURE_2D, gui.default_atlas_id)
+	gui.atlas = texture_create(0, DEFAULT_ATLAS_WIDTH, DEFAULT_ATLAS_HEIGHT)
+
+	gl.GenTextures(1, &gui.atlas.texture_id)
+	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
 
 	gl.TexImage2D(
 		target = gl.TEXTURE_2D,

@@ -140,6 +140,7 @@ Command_Variant :: union {
 	^Command_Rect,
 	^Command_Text,
 	^Command_Icon,
+	^Command_Image,
 }
 Command :: struct {
 	variant: Command_Variant,
@@ -170,6 +171,13 @@ Command_Icon :: struct {
 	rect:          Rect,
 	id:            Icon,
 	color:         Color,
+}
+Command_Image :: struct {
+	using command: Command,
+	tex:           Texture,
+	dst:           Rect,
+	src:           Rect,
+	color:         Color, // a tint color
 }
 
 
@@ -813,6 +821,17 @@ draw_icon :: proc(ctx: ^Context, id: Icon, rect: Rect, color: Color) {
 	}
 }
 
+
+draw_image :: proc(ctx: ^Context, tex: Texture, dst, src: Rect, color: Color) {
+	// TODO ignoring clipping for now, seems like it is not necessary?
+
+	img_cmd := push_command(ctx, Command_Image)
+	img_cmd.tex = tex
+	img_cmd.dst = dst
+	img_cmd.src = src
+	img_cmd.color = color
+}
+
 /*============================================================================
 ** layout
 **============================================================================*/
@@ -1285,6 +1304,26 @@ number :: proc(
 
 	return
 }
+
+
+image :: proc(ctx: ^Context, tex: Texture, src, dst: Rect) {
+	fmt.printf("got to draw an image texture! %v\n", tex.texture_id)
+	id := get_id(ctx, uintptr(tex.texture_id))
+	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
+	r := layout_next(ctx)
+	r.w = dst.w
+	r.h = dst.h
+	fmt.printf("layout next: %v\n", r)
+
+	// BUG: the height of this element isn't pushing the layout of the next thing correctly
+	// BUG: this extends outside a window that is clipped
+	// BUG: why is my texture set to color suppression?
+	// the mu.panel() thing may be a way to get stuff organized, or show examples of how to get the available space
+		// there is an internal
+
+	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255}) // 255 is what gives it full color....
+}
+
 
 @(private)
 _header :: proc(ctx: ^Context, label: string, is_treenode: bool, opt := Options{}) -> Result_Set {
