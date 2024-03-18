@@ -1057,6 +1057,8 @@ label :: proc(ctx: ^Context, text: string) {
 	draw_control_text(ctx, text, layout_next(ctx), .TEXT)
 }
 
+
+// A button with text OR icon - not both!
 button :: proc(
 	ctx: ^Context,
 	label: string,

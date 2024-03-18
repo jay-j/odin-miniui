@@ -17,9 +17,10 @@ A small, portable, immediate-mode UI library written in Odin. (Extended from the
 ## Goals / Added Features
 [ ] Image elements
 [ ] Read-only mode; grey-out locked controls
-[ ] Support for more specific numeric inputs (float vs. integer)
+[ ] Support for more specific numeric inputs (integer, not float only)
 [ ] Window docking & tabs
 [ ] Tables
+[ ] Combined "number + label" guie element!
 
 These maybe should be done as some other package:
 [ ] Plots

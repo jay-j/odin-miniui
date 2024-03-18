@@ -33,7 +33,7 @@ init :: proc(allocator := context.allocator) -> ^Gui {
 	context.allocator = allocator
 
 	// Need the result to be used and passed around. Internally calls microui.init()
-	gui : ^Gui = new(Gui, context.allocator)
+	gui: ^Gui = new(Gui, context.allocator)
 
 	gpu_init_default_atlas(gui)
 	gpu_init_shader(gui)
@@ -83,13 +83,14 @@ gpu_render_texture :: proc(
 	dst: ^Rect,
 	src: Rect,
 	color: Color,
+	csys := Vec2{0, 0},
 ) {
 	// Build and render a textured quad out of two triangles.
 	// src and dst are in units of pixels, because this is what microui is using
 
-	// SDL (and thus microui) coordinates are measured down from the top left corner, but my screenspace is reasonable
-	// OpenGL UV cordiantes are [0,1], starting in the lower left
-	// But assume that the image is loaded in memory backwards 
+	// SDL (and thus microui) coordinates are measured down from the top left corner,
+	// but my screenspace is reasonable OpenGL UV cordiantes are [0,1]; starting in the lower left.
+	// But assume that the image is loaded in memory with Y backwards
 	// p(0,0) g(-1,+1) uv(0,1)                      p(1000,0) g(+1,+1) uv(1,1)
 	//
 	//
@@ -117,8 +118,8 @@ gpu_render_texture :: proc(
 
 	v_left_top: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
+			2.0 * f32(dst.x + csys.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + csys.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv = {f32(src.x) / f32(DEFAULT_ATLAS_WIDTH), f32(src.y) / f32(DEFAULT_ATLAS_HEIGHT)},
@@ -126,8 +127,8 @@ gpu_render_texture :: proc(
 	}
 	v_left_bottom: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
+			2.0 * f32(dst.x + csys.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + dst.h + csys.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -138,8 +139,8 @@ gpu_render_texture :: proc(
 	}
 	v_right_bottom: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
+			2.0 * f32(dst.x + dst.w + csys.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + dst.h + csys.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -151,8 +152,8 @@ gpu_render_texture :: proc(
 
 	v_right_top: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
+			2.0 * f32(dst.x + dst.w + csys.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + csys.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -226,6 +227,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	// Recommend the allocator be a temp allocator of some sort
 	vertices := make([dynamic]Vertex, allocator = allocator)
 	indices := make([dynamic]u16, allocator = allocator)
+	csys := Vec2{0, 0}
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
@@ -236,23 +238,9 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Enable(gl.TEXTURE_2D)
 	// get information about the current maximum viewport
 
-
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 
-	{
-		// HACK: just put in some quads manually
-		r := min(int('A'), 127)
-		src := default_atlas[DEFAULT_ATLAS_FONT + r]
-		dst := Rect {
-			x = 10,
-			y = 10,
-			w = 0,
-			h = 0,
-		}
-		gpu_render_texture(gui, &vertices, &indices, &dst, src, Color{0, 0, 0, 0})
-	}
-
-	// fmt.printf("[UI] Frame Draw start!\n")
+	fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
@@ -266,7 +254,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
 				// fmt.printf("Text color: %v", cmd.color)
-				gpu_render_texture(gui, &vertices, &indices, &dst, src, cmd.color)
+				gpu_render_texture(gui, &vertices, &indices, &dst, src, cmd.color, csys = csys)
 				dst.x += dst.w
 			}
 
@@ -295,15 +283,27 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			gl.Disable(gl.SCISSOR_TEST)
 
 		case ^Command_Icon:
-			// fmt.printf("  icon\n")
+			// fmt.printf("  icon: %v\n", cmd.id)
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
-			gpu_render_texture(gui, &vertices, &indices, &Rect{x, y, 0, 0}, src, cmd.color)
+			gpu_render_texture(
+				gui,
+				&vertices,
+				&indices,
+				&Rect{x, y, 0, 0},
+				src,
+				cmd.color,
+				csys = csys,
+			)
 
 		case ^Command_Clip:
 			// fmt.printf("  clip: %v\n", cmd.rect)
-			draw_flush(gui, &vertices, &indices)
+			// draw_flush(gui, &vertices, &indices)
+			// this seems to be double counting the position of the current window?
+			csys.x = 0 // cmd.rect.x
+			csys.y = 0 // cmd.rect.y
+		// TODO does this need to be offset by window height? What coordinate system is used?
 		// TODO how much does this library rely on incremental drawing and Clip Rectangle behavior?
 		// TODO when are these actually supposed to be used?
 		// SDL.RenderSetClipRect(renderer, &SDL.Rect{cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h})

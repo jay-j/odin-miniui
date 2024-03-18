@@ -55,9 +55,13 @@ main :: proc() {
 			defer mu.end(&gui.ctx)
 
 			if mu.window(&gui.ctx, "test window", {0, 0, 200, 400}) {
+				@(static)
+				check_early: bool = false
+				mu.checkbox(&gui.ctx, "checkbox_early", &check_early)
+
 				mu.label(&gui.ctx, "hello world")
 
-				if .SUBMIT in mu.button(&gui.ctx, "dis a button", icon = .CHECK) {
+				if .SUBMIT in mu.button(&gui.ctx, "", icon = .CHECK) {
 					fmt.printf("button was pressed\n")
 				}
 
@@ -74,11 +78,11 @@ main :: proc() {
 
 				@(static)
 				number2: f32 = 11
-				// id := mu.get_id(&gui.ctx, uintptr(number2)) // ? todo these are kind of annoying out here?
-				// base := mu.layout_next(&gui.ctx) // ??
-				// mu.number_textbox(&gui.ctx, &number2, base, id, "%.3f")
-
 				mu.slider(&gui.ctx, &number2, -20, 20, 0.5, "%.1f")
+
+				@(static)
+				check_end: bool = false
+				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
 			all_windows(&gui.ctx)
@@ -95,9 +99,7 @@ main :: proc() {
 		SDL.GL_SwapWindow(app.window)
 
 		free_all(context.temp_allocator)
-
 	}
-
 }
 
 
