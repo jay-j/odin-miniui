@@ -83,7 +83,6 @@ gpu_render_texture :: proc(
 	dst: ^Rect,
 	src: Rect,
 	color: Color,
-	csys := Vec2{0, 0},
 ) {
 	// Build and render a textured quad out of two triangles.
 	// src and dst are in units of pixels, because this is what microui is using
@@ -118,8 +117,8 @@ gpu_render_texture :: proc(
 
 	v_left_top: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + csys.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + csys.y) / f32(gui.window_height),
+			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv = {f32(src.x) / f32(DEFAULT_ATLAS_WIDTH), f32(src.y) / f32(DEFAULT_ATLAS_HEIGHT)},
@@ -127,8 +126,8 @@ gpu_render_texture :: proc(
 	}
 	v_left_bottom: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + csys.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h + csys.y) / f32(gui.window_height),
+			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -139,8 +138,8 @@ gpu_render_texture :: proc(
 	}
 	v_right_bottom: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + dst.w + csys.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h + csys.y) / f32(gui.window_height),
+			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -152,8 +151,8 @@ gpu_render_texture :: proc(
 
 	v_right_top: Vertex = {
 		pos =  {
-			2.0 * f32(dst.x + dst.w + csys.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + csys.y) / f32(gui.window_height),
+			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
+			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
 			zpos,
 		},
 		uv =  {
@@ -227,7 +226,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	// Recommend the allocator be a temp allocator of some sort
 	vertices := make([dynamic]Vertex, allocator = allocator)
 	indices := make([dynamic]u16, allocator = allocator)
-	csys := Vec2{0, 0}
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
@@ -240,7 +238,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 
-	fmt.printf("[UI] Frame Record Start!\n")
+	// fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
@@ -254,7 +252,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
 				// fmt.printf("Text color: %v", cmd.color)
-				gpu_render_texture(gui, &vertices, &indices, &dst, src, cmd.color, csys = csys)
+				gpu_render_texture(gui, &vertices, &indices, &dst, src, cmd.color)
 				dst.x += dst.w
 			}
 
@@ -263,6 +261,8 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			draw_flush(gui, &vertices, &indices)
 
 			// Temporary set draw bounds nd use gl.Clear() to draw a rectangle
+			// TODO rewrite to draw a tinted quad and be able to just add this as another
+			// quad to be drawn by the GPU program; right now this is a lot of GPU calls!
 			gl.Enable(gl.SCISSOR_TEST)
 			gl.Scissor(
 				cmd.rect.x,
@@ -287,29 +287,13 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
-			gpu_render_texture(
-				gui,
-				&vertices,
-				&indices,
-				&Rect{x, y, 0, 0},
-				src,
-				cmd.color,
-				csys = csys,
-			)
+			gpu_render_texture(gui, &vertices, &indices, &Rect{x, y, 0, 0}, src, cmd.color)
 
 		case ^Command_Clip:
 			// fmt.printf("  clip: %v\n", cmd.rect)
-			// draw_flush(gui, &vertices, &indices)
-			// this seems to be double counting the position of the current window?
-			csys.x = 0 // cmd.rect.x
-			csys.y = 0 // cmd.rect.y
-		// TODO does this need to be offset by window height? What coordinate system is used?
-		// TODO how much does this library rely on incremental drawing and Clip Rectangle behavior?
-		// TODO when are these actually supposed to be used?
-		// SDL.RenderSetClipRect(renderer, &SDL.Rect{cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h})
-
-		// gl.Enable(gl.SCISSOR_TEST)
-		// gl.Scissor(cmd.rect.x, app.window_height-cmd.rect.y-cmd.rect.h, cmd.rect.w, cmd.rect.h)
+			// This case no longer seems necessary with the shift to OpenGl Calls. I had thought
+			// this should alter an offset coordinate system to be used by gpu_render_texture, but
+			// that breaks things. So this codepath is activated now but ignored with seemingly no problem.
 
 		case ^Command_Jump:
 			// This is handled by mu.next_command_iterator() to call commands in the right sequence
