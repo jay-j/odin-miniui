@@ -823,13 +823,24 @@ draw_icon :: proc(ctx: ^Context, id: Icon, rect: Rect, color: Color) {
 
 
 draw_image :: proc(ctx: ^Context, tex: Texture, dst, src: Rect, color: Color) {
-	// TODO ignoring clipping for now, seems like it is not necessary?
+	clipped := check_clip(ctx, dst)
+	switch clipped {
+	case .NONE:
+	case .ALL:
+		return
+	case .PART:
+		set_clip(ctx, get_clip_rect(ctx))
+	}
 
 	img_cmd := push_command(ctx, Command_Image)
 	img_cmd.tex = tex
 	img_cmd.dst = dst
 	img_cmd.src = src
 	img_cmd.color = color
+
+	if clipped != .NONE {
+		set_clip(ctx, unclipped_rect)
+	}
 }
 
 /*============================================================================
@@ -906,6 +917,7 @@ layout_next :: proc(ctx: ^Context) -> (res: Rect) {
 			return
 		}
 	} else {
+		//nocheckin: this is what's getting executed in my cases
 		/* handle next row */
 		if layout.item_index == layout.items {
 			layout_row_items(ctx, layout.items, layout.size.y)
@@ -1008,6 +1020,8 @@ mouse_over :: proc(ctx: ^Context, rect: Rect) -> bool {
 	)
 }
 
+
+// Update variables related to user inputs; hover, mouse
 update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 	mouseover := mouse_over(ctx, rect)
 
@@ -1319,7 +1333,7 @@ image :: proc(ctx: ^Context, tex: Texture, src, dst: Rect) {
 	// BUG: this extends outside a window that is clipped
 	// BUG: why is my texture set to color suppression?
 	// the mu.panel() thing may be a way to get stuff organized, or show examples of how to get the available space
-		// there is an internal
+	// there is an internal
 
 	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255}) // 255 is what gives it full color....
 }

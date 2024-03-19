@@ -90,17 +90,17 @@ main :: proc() {
 			}
 
 			if mu.window(&gui.ctx, "image here", {700, 200, 300, 300}) {
-				mu.label(&gui.ctx, "image below here:")
+				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.image(
 					&gui.ctx,
 					tex_demo,
 					mu.Rect{0, 0, tex_demo.width, tex_demo.height},
-					mu.Rect{0, 0, 128, 128},
+					mu.Rect{0, 0, 256, 256},
 				)
-				mu.label(&gui.ctx, "image above here")
+				mu.label(&gui.ctx, "image above here. again want long text example")
 			}
 
-			all_windows(&gui.ctx)
+			// all_windows(&gui.ctx)
 
 		}
 

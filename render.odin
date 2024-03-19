@@ -11,6 +11,7 @@ Gui :: struct {
 	// current window dimensions (px) provided to draw_prepare()
 	window_width:    i32,
 	window_height:   i32,
+	clip:            Rect,
 
 	// standard_atlas is the one that comes bundled with microui/miniui
 	atlas:           Texture,
@@ -129,11 +130,50 @@ gpu_render_texture :: proc(
 		gui.last_texture_id = tex.texture_id
 	}
 
+	// TODO clipping may mess with this..
 	// Display 1:1. Required for microui, this also controls character advance.
 	if scale_unity {
 		dst.w = src.w
 		dst.h = src.h
 	}
+
+	// Left side clip
+	if dst.x < gui.clip.x {
+		delta := gui.clip.x - dst.x // positive
+		dst.x += delta
+		dst.w -= delta
+		// TODO clip the texture as well
+	}
+	// Right side clip
+	if dst.x + dst.w > gui.clip.x + gui.clip.w {
+		delta := (dst.x + dst.w) - (gui.clip.x + gui.clip.w) // positive
+		dst.w -= delta
+		// TODO clip the texture as well
+	}
+	// Early out if the texture ends up not being shown at all.
+	if dst.w <= 0 {
+		return
+	}
+
+	// Y-clipping
+	// Top side clip
+	if dst.y < gui.clip.y {
+		delta := gui.clip.y - dst.y // positive
+		dst.y += delta
+		dst.w -= delta
+		// TODO think about texture clipping
+	}
+	// Bottom side clip
+	if dst.y + dst.h > gui.clip.y + gui.clip.h {
+		delta := (dst.y + dst.h) - (gui.clip.y + gui.clip.h)
+		dst.h -= delta
+		// TODO clip the texture
+	}
+	// Early out if the texture ends up not being shown at all.
+	if dst.h <= 0 {
+		return
+	}
+
 
 	// specify vertex position in screenspace coordiantes (assume the camera gets sorted out)
 	// specify vertex UV coordinates based on where to pull from the texture atlas
@@ -176,10 +216,7 @@ gpu_render_texture :: proc(
 			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
 			zpos,
 		},
-		uv =  {
-			f32(src.x + src.w) * tex.inv_width,
-			f32(src.y + src.h) * tex.inv_height,
-		},
+		uv = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 
@@ -189,10 +226,7 @@ gpu_render_texture :: proc(
 			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
 			zpos,
 		},
-		uv =  {
-			f32(src.x + src.w) * tex.inv_width,
-			f32(src.y) * tex.inv_height,
-		},
+		uv = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 
@@ -268,14 +302,15 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	// get information about the current maximum viewport
 
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
+	gui.clip = unclipped_rect
 
-	// fmt.printf("[UI] Frame Record Start!\n")
+	fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
 		switch cmd in variant {
 		case ^Command_Text:
-			// fmt.printf("  text: %v\n", cmd.str)
+			fmt.printf("  text: %v\n", cmd.str)
 			// Pull rects from the ui texture atlas
 			// Call editui_render_texture from atlas
 			dst := Rect{cmd.pos.x, cmd.pos.y, 0, 0}
@@ -288,7 +323,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			}
 
 		case ^Command_Rect:
-			// fmt.printf("  rect: %v\n", cmd.color)
+			fmt.printf("  rect: %v\n", cmd.color)
 			draw_flush(gui, &vertices, &indices)
 
 			// Temporary set draw bounds nd use gl.Clear() to draw a rectangle
@@ -314,7 +349,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			gl.Disable(gl.SCISSOR_TEST)
 
 		case ^Command_Icon:
-			// fmt.printf("  icon: %v\n", cmd.id)
+			fmt.printf("  icon: %v\n", cmd.id)
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
@@ -329,10 +364,17 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			)
 
 		case ^Command_Clip:
-		// fmt.printf("  clip: %v\n", cmd.rect)
+			fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
+			gui.clip = cmd.rect
 		// This case no longer seems necessary with the shift to OpenGl Calls. I had thought
 		// this should alter an offset coordinate system to be used by gpu_render_texture, but
 		// that breaks things. So this codepath is activated now but ignored with seemingly no problem.
+
+		// Instead of shifting the coordinate system, monitor the clip state?
+		// Then if there are pixels outside the clip system, then have to adjust all the dimensions of the rendered quad. Including if the quad is entirely out of view then don't show it at all.
+
+		// Clip information is given in the coordinate system of the entire window.
+		// 
 
 		case ^Command_Jump:
 			// This is handled by mu.next_command_iterator() to call commands in the right sequence
@@ -340,8 +382,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			panic("Graphics drawing encountered mu.Command_Jump!")
 
 		case ^Command_Image:
-			// draw_flush(gui, &vertices, &indices) // TODO can this be removed even though texture is changing?
-			// TODO if so it would have to be flushed again after the screen is drawn?
+			fmt.printf("  image\n")
 
 			gpu_render_texture(
 				gui,
