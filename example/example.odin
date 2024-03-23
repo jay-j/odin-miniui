@@ -98,12 +98,7 @@ main :: proc() {
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.layout_row(&gui.ctx, {-1}, 128)
-				mu.image(
-					&gui.ctx,
-					tex_demo,
-					mu.Rect{0, 0, tex_demo.width, tex_demo.height},
-					mu.Rect{0, 0, 256, 256},
-				)
+				mu.image(&gui.ctx, tex_demo, mu.Rect{0, 0, tex_demo.width, tex_demo.height}, mu.Rect{0, 0, 256, 256})
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image above here. again want long text example")
 			}
@@ -143,13 +138,7 @@ setup_texture :: proc(filename: string, allocator := context.allocator) -> (tex:
 		// TODO better error handling
 		assert(false)
 	}
-	fmt.printf(
-		"Loaded image from %v is %v x %v with %v channels\n",
-		filename,
-		tex.width,
-		tex.height,
-		texture_raw_channels,
-	)
+	fmt.printf("Loaded image from %v is %v x %v with %v channels\n", filename, tex.width, tex.height, texture_raw_channels)
 
 	tex.inv_width = 1.0 / f32(tex.width)
 	tex.inv_height = 1.0 / f32(tex.height)
@@ -372,13 +361,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 			r := mu.layout_next(ctx)
 			mu.draw_rect(ctx, r, state.bg)
 			mu.draw_box(ctx, mu.expand_rect(r, 1), ctx.style.colors[.BORDER])
-			mu.draw_control_text(
-				ctx,
-				fmt.tprintf("#%02x%02x%02x", state.bg.r, state.bg.g, state.bg.b),
-				r,
-				.TEXT,
-				{.ALIGN_CENTER},
-			)
+			mu.draw_control_text(ctx, fmt.tprintf("#%02x%02x%02x", state.bg.r, state.bg.g, state.bg.b), r, .TEXT, {.ALIGN_CENTER})
 		}
 	}
 
@@ -450,12 +433,16 @@ all_windows :: proc(ctx: ^mu.Context) {
 // 
 
 Viewport :: struct {
-	shader: mu.Shader,
+	shader:                 mu.Shader,
 	// vertices
 	// indices
-	framebuffer_id: u32,
+	framebuffer_id:         u32,
 	framebuffer_texture_id: u32,
-	framebuffer_depth_id: u32,
+	framebuffer_depth_id:   u32,
+	framebuffer_width:      i32,
+	framebuffer_height:     i32,
+	framebuffer_width_max:  i32,
+	framebuffer_height_max: i32,
 }
 
 Viewport_Vertex :: struct #packed {
@@ -489,6 +476,35 @@ viewport_init :: proc() -> (vp: Viewport) {
 
 	fmt.printf("Size of Viewport_Vertex: %v bytes\n", size_of(Viewport_Vertex))
 
+	vp.framebuffer_width_max = 1920
+	vp.framebuffer_height_max = 1080
+
+	// Create a framebuffer to render to! Needs both a color and depth texture
+	// buffs : [^]u32 = make([^]u32, 3)
+	// gl.CreateFramebuffers(1, buffs)
+	id: u32
+	gl.GenFramebuffers(1, &id) // GenFramebuffers vs. CreateFramebuffers?
+	// gl.CreateFramebuffers(1, &vp.framebuffer_id)
+	{
+		gl.GenTextures(1, &vp.framebuffer_texture_id)
+		fmt.printf("framebuffer texture id: %v\n", vp.framebuffer_texture_id)
+		fmt.printf("Error state: %v (NO_ERROR=%v)\n", gl.GetError(), gl.NO_ERROR)
+
+		// TODO do stuff to set filters and edge conditions on that texture
+
+		gl.TextureStorage2D(vp.framebuffer_texture_id, 1, gl.RGBA8, vp.framebuffer_width_max, vp.framebuffer_height_max)
+		// gl.NamedFramebufferTexture(vp.framebuffer_id, gl.COLOR_ATTACHMENT0, vp.framebuffer_texture_id, 0)
+	}
+
+	// {
+	// 	gl.CreateTextures(gl.TEXTURE_2D, 1, &vp.framebuffer_depth_id)
+
+	// 	gl.TextureStorage2D(vp.framebuffer_depth_id, 1, gl.DEPTH24_STENCIL8, vp.framebuffer_width_max, vp.framebuffer_height_max)
+
+	// 	gl.NamedFramebufferTexture(vp.framebuffer_id, gl.DEPTH_STENCIL_ATTACHMENT, vp.framebuffer_depth_id, 0)
+	// }
+
+
 	return
 }
 
@@ -519,22 +535,8 @@ viewport_draw_prepare :: proc(vp: ^Viewport) {
 	gl.EnableVertexAttribArray(0) // pos
 	gl.EnableVertexAttribArray(1) // color in
 
-	gl.VertexAttribPointer(
-		0,
-		3,
-		gl.FLOAT,
-		false,
-		size_of(Viewport_Vertex),
-		offset_of(Viewport_Vertex, pos),
-	) // within the buffer where is position?
-	gl.VertexAttribPointer(
-		1,
-		4,
-		gl.FLOAT,
-		false,
-		size_of(Viewport_Vertex),
-		offset_of(Viewport_Vertex, color),
-	) // where is color? stride?
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos)) // within the buffer where is position?
+	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, color)) // where is color? stride?
 }
 
 
