@@ -36,6 +36,14 @@ main :: proc() {
 	tex_demo: mu.Texture = setup_texture("texture_demo.png")
 
 	vp := viewport_init()
+	vp_texture := mu.Texture {
+		texture_id = vp.framebuffer_texture_id,
+		// TODO need these to be non insane and constant things! link between render calls and this!
+		width      = 1024,
+		height     = 1024,
+		inv_width  = 1.0 / 1024,
+		inv_height  = 1.0 / 1024,
+	}
 
 	main_loop: for {
 		app_framerate_control()
@@ -105,6 +113,14 @@ main :: proc() {
 
 			all_windows(&gui.ctx)
 
+
+			{
+				viewport_draw(&vp)
+				if mu.window(&gui.ctx, "Framebuffer demo", {400, 500, 300, 300}) {
+					mu.layout_row(&gui.ctx, {-1}, 0)
+					mu.image(&gui.ctx, vp_texture, mu.Rect{0, 0, 1024, 1024}, mu.Rect{0, 0, 1024, 1024})
+				}
+			}
 		}
 
 		{
@@ -114,9 +130,6 @@ main :: proc() {
 		}
 
 		mu.draw(gui, context.temp_allocator)
-
-		viewport_draw(&vp)
-
 		SDL.GL_SwapWindow(app.window)
 
 		free_all(context.temp_allocator)
@@ -189,7 +202,8 @@ gfx_window_setup :: proc(window_width, window_height: i32) {
 	SDL.GL_SetAttribute(SDL.GLattr.GREEN_SIZE, 8)
 	SDL.GL_SetAttribute(SDL.GLattr.ALPHA_SIZE, 8)
 
-	gl.load_up_to(3, 3, SDL.gl_set_proc_address)
+	// Framebuffers don't work on OpenGL 3.3
+	gl.load_up_to(4, 5, SDL.gl_set_proc_address)
 
 	// Disabling the OpenGL Depth Test greatly enables seemingly good alpha over behavior
 	// gl.Enable(gl.DEPTH_TEST)
@@ -479,64 +493,43 @@ viewport_init :: proc() -> (vp: Viewport) {
 	vp.framebuffer_width_max = 1920
 	vp.framebuffer_height_max = 1080
 
-	// Create a framebuffer to render to! Needs both a color and depth texture
-	// buffs : [^]u32 = make([^]u32, 3)
-	// gl.CreateFramebuffers(1, buffs)
-	id: u32
-	gl.GenFramebuffers(1, &id) // GenFramebuffers vs. CreateFramebuffers?
-	// gl.CreateFramebuffers(1, &vp.framebuffer_id)
 	{
-		gl.GenTextures(1, &vp.framebuffer_texture_id)
-		fmt.printf("framebuffer texture id: %v\n", vp.framebuffer_texture_id)
-		fmt.printf("Error state: %v (NO_ERROR=%v)\n", gl.GetError(), gl.NO_ERROR)
+		gl.CreateFramebuffers(1, &vp.framebuffer_id)
 
-		// TODO do stuff to set filters and edge conditions on that texture
-
+		// Color texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &vp.framebuffer_texture_id)
 		gl.TextureStorage2D(vp.framebuffer_texture_id, 1, gl.RGBA8, vp.framebuffer_width_max, vp.framebuffer_height_max)
-		// gl.NamedFramebufferTexture(vp.framebuffer_id, gl.COLOR_ATTACHMENT0, vp.framebuffer_texture_id, 0)
+		gl.NamedFramebufferTexture(vp.framebuffer_id, gl.COLOR_ATTACHMENT0, vp.framebuffer_texture_id, 0)
+
+		// Depth texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &vp.framebuffer_depth_id)
+		gl.TextureStorage2D(vp.framebuffer_depth_id, 1, gl.DEPTH24_STENCIL8, vp.framebuffer_width_max, vp.framebuffer_height_max)
+		gl.NamedFramebufferTexture(vp.framebuffer_id, gl.DEPTH_STENCIL_ATTACHMENT, vp.framebuffer_depth_id, 0)
 	}
-
-	// {
-	// 	gl.CreateTextures(gl.TEXTURE_2D, 1, &vp.framebuffer_depth_id)
-
-	// 	gl.TextureStorage2D(vp.framebuffer_depth_id, 1, gl.DEPTH24_STENCIL8, vp.framebuffer_width_max, vp.framebuffer_height_max)
-
-	// 	gl.NamedFramebufferTexture(vp.framebuffer_id, gl.DEPTH_STENCIL_ATTACHMENT, vp.framebuffer_depth_id, 0)
-	// }
-
 
 	return
 }
 
 
 viewport_draw_prepare :: proc(vp: ^Viewport) {
-	// glBindFramebuffer(GL_FRAMEBUFFER, vp->framebuffer_id);
-
 	gl.UseProgram(0)
-
-	// TODO this should not be a sissor anymore once a framebuffer is used!
-	gl.Viewport(0, 0, 512, 512) // TODO hardcoded
-	{
-		gl.Enable(gl.SCISSOR_TEST)
-		gl.Scissor(0, 0, 512, 512)
-	}
-
-	gl.ClearColor(0, 0, 0, 0)
-	gl.Clear(gl.COLOR_BUFFER_BIT)
-	gl.Clear(gl.DEPTH_BUFFER_BIT)
-
-	gl.Disable(gl.SCISSOR_TEST)
 
 	gl.UseProgram(vp.shader.program)
 	gl.BindVertexArray(vp.shader.vao)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vp.shader.vbo)
 
+	gl.BindFramebuffer(gl.FRAMEBUFFER, vp.framebuffer_id)
+	gl.Viewport(0, 0, 1024, 1024) // TODO hardcoded
+	gl.ClearColor(0, 0, 0, 0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+
 	// set the vertex attribute stuff
 	gl.EnableVertexAttribArray(0) // pos
 	gl.EnableVertexAttribArray(1) // color in
 
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos)) // within the buffer where is position?
-	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, color)) // where is color? stride?
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos)) 
+	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, color))
 }
 
 
@@ -576,6 +569,8 @@ viewport_draw_flush :: proc(vp: ^Viewport, lineset: ^[dynamic]Viewport_Line) {
 	lines_to_draw := i32(2 * len(lineset))
 	gl.BufferData(gl.ARRAY_BUFFER, bytes_to_push, raw_data(lineset[:]), gl.DYNAMIC_DRAW)
 	gl.DrawArrays(gl.LINES, 0, lines_to_draw)
+
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
 
 
@@ -589,7 +584,6 @@ out vec4 color;
 
 void main(){
 	gl_Position = MVP * vec4(position, 1);
-	// gl_Position = vec4(position, 1);
 	color = color_in;
 }
 `
