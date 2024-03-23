@@ -4,10 +4,12 @@ package miniui_example
 
 import mu ".."
 import "core:fmt"
+import glm "core:math/linalg/glsl"
 import "core:time"
 import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
 
+import "core:math"
 import "core:strings"
 import stbi "vendor:stb/image"
 
@@ -32,6 +34,8 @@ main :: proc() {
 	gui := mu.init()
 
 	tex_demo: mu.Texture = setup_texture("texture_demo.png")
+
+	vp := viewport_init()
 
 	main_loop: for {
 		app_framerate_control()
@@ -59,6 +63,7 @@ main :: proc() {
 			defer mu.end(&gui.ctx)
 
 			if mu.window(&gui.ctx, "test window", {0, 0, 200, 400}) {
+				mu.layout_row(&gui.ctx, {-1}, 0)
 				@(static)
 				check_early: bool = false
 				mu.checkbox(&gui.ctx, "checkbox_early", &check_early)
@@ -90,17 +95,20 @@ main :: proc() {
 			}
 
 			if mu.window(&gui.ctx, "image here", {700, 200, 300, 300}) {
+				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
+				mu.layout_row(&gui.ctx, {-1}, 128)
 				mu.image(
 					&gui.ctx,
 					tex_demo,
 					mu.Rect{0, 0, tex_demo.width, tex_demo.height},
 					mu.Rect{0, 0, 256, 256},
 				)
+				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image above here. again want long text example")
 			}
 
-			// all_windows(&gui.ctx)
+			all_windows(&gui.ctx)
 
 		}
 
@@ -111,6 +119,9 @@ main :: proc() {
 		}
 
 		mu.draw(gui, context.temp_allocator)
+
+		viewport_draw(&vp)
+
 		SDL.GL_SwapWindow(app.window)
 
 		free_all(context.temp_allocator)
@@ -434,3 +445,159 @@ all_windows :: proc(ctx: ^mu.Context) {
 	}
 
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////
+// 
+
+Viewport :: struct {
+	shader: mu.Shader,
+	// vertices
+	// indices
+	framebuffer_id: u32,
+	framebuffer_texture_id: u32,
+	framebuffer_depth_id: u32,
+}
+
+Viewport_Vertex :: struct #packed {
+	// 28 bytes
+	pos:   glm.vec3,
+	color: glm.vec4,
+}
+
+Viewport_Line :: struct #packed {
+	// 56 bytes
+	vert: [2]Viewport_Vertex,
+}
+
+viewport_init :: proc() -> (vp: Viewport) {
+	program_ok: bool
+
+	// A simple line drawing shader
+	vp.shader.program, program_ok = gl.load_shaders_source(shader_lines_vertex, shader_lines_frag)
+	if !program_ok {
+		panic("Failed to create GLSL program for demo line rendering.")
+	}
+	gl.UseProgram(vp.shader.program)
+
+	gl.GenVertexArrays(1, &vp.shader.vao)
+	gl.BindVertexArray(vp.shader.vao)
+
+	gl.GenBuffers(1, &vp.shader.vbo)
+
+	vp.shader.uniforms = gl.get_uniforms_from_program(vp.shader.program)
+	fmt.printf("Uniforms are: %#v\n", vp.shader.uniforms)
+
+	fmt.printf("Size of Viewport_Vertex: %v bytes\n", size_of(Viewport_Vertex))
+
+	return
+}
+
+
+viewport_draw_prepare :: proc(vp: ^Viewport) {
+	// glBindFramebuffer(GL_FRAMEBUFFER, vp->framebuffer_id);
+
+	gl.UseProgram(0)
+
+	// TODO this should not be a sissor anymore once a framebuffer is used!
+	gl.Viewport(0, 0, 512, 512) // TODO hardcoded
+	{
+		gl.Enable(gl.SCISSOR_TEST)
+		gl.Scissor(0, 0, 512, 512)
+	}
+
+	gl.ClearColor(0, 0, 0, 0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+
+	gl.Disable(gl.SCISSOR_TEST)
+
+	gl.UseProgram(vp.shader.program)
+	gl.BindVertexArray(vp.shader.vao)
+	gl.BindBuffer(gl.ARRAY_BUFFER, vp.shader.vbo)
+
+	// set the vertex attribute stuff
+	gl.EnableVertexAttribArray(0) // pos
+	gl.EnableVertexAttribArray(1) // color in
+
+	gl.VertexAttribPointer(
+		0,
+		3,
+		gl.FLOAT,
+		false,
+		size_of(Viewport_Vertex),
+		offset_of(Viewport_Vertex, pos),
+	) // within the buffer where is position?
+	gl.VertexAttribPointer(
+		1,
+		4,
+		gl.FLOAT,
+		false,
+		size_of(Viewport_Vertex),
+		offset_of(Viewport_Vertex, color),
+	) // where is color? stride?
+}
+
+
+viewport_draw :: proc(vp: ^Viewport) {
+	viewport_draw_prepare(vp)
+
+	// context.temp_allocator is assumed to be cleared once per frame (no leak here)
+	lineset := make([dynamic]Viewport_Line, 0, 128, context.temp_allocator)
+
+	// Draw the stuff in between
+	line :: proc(v1, v2: glm.vec3) -> (res: Viewport_Line) {
+		res.vert[0].pos = v1
+		res.vert[1].pos = v2
+		res.vert[0].color = {0.8, 0.5, 0.5, 1.0}
+		res.vert[1].color = {0.5, 0.5, 0.8, 1.0}
+		return
+	}
+	append(&lineset, line({0, 0, 0.1}, {0.9, 0.9, 0.9}))
+	append(&lineset, line({0, 0, 0.1}, {-0.5, -0.1, 0.2}))
+	append(&lineset, line({0.1, 0.2, .3}, {-0.2, 0.2, 0.5}))
+
+	viewport_draw_flush(vp, &lineset)
+}
+
+
+viewport_draw_flush :: proc(vp: ^Viewport, lineset: ^[dynamic]Viewport_Line) {
+
+	tf := glm.mat4{1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1} // 
+
+	proj := glm.mat4Ortho3d(-1, 1, -1, 1, 0.1, 20) // half widths, half heights, near, far
+	view := glm.mat4LookAt({0, 0.3 * math.sin(app.t), 2}, {0, 0, 0}, {0, 1, 0}) // eye location, what to look at, up vector
+	u_transform := proj * view * tf
+	gl.UniformMatrix4fv(vp.shader.uniforms["MVP"].location, 1, false, &u_transform[0, 0])
+
+	// Push data to the GPU and call draw!
+	bytes_to_push := len(lineset) * size_of(lineset[0])
+	lines_to_draw := i32(2 * len(lineset))
+	gl.BufferData(gl.ARRAY_BUFFER, bytes_to_push, raw_data(lineset[:]), gl.DYNAMIC_DRAW)
+	gl.DrawArrays(gl.LINES, 0, lines_to_draw)
+}
+
+
+shader_lines_vertex: string = `
+#version 330 core
+layout(location=0) in vec3 position; // model space
+layout(location=1) in vec4 color_in;
+
+uniform mat4 MVP;
+out vec4 color;
+
+void main(){
+	gl_Position = MVP * vec4(position, 1);
+	// gl_Position = vec4(position, 1);
+	color = color_in;
+}
+`
+
+shader_lines_frag: string = `
+#version 330 core
+in vec4 color;
+out vec4 color_out;
+
+void main(){
+    color_out = color;
+}
+`

@@ -106,7 +106,7 @@ gpu_render_texture :: proc(
 	gui: ^Gui,
 	vertices: ^[dynamic]Vertex,
 	indices: ^[dynamic]u16,
-	dst: ^Rect,
+	dst: Rect,
 	src: Rect,
 	tex: Texture,
 	color: Color,
@@ -130,25 +130,28 @@ gpu_render_texture :: proc(
 		gui.last_texture_id = tex.texture_id
 	}
 
-	// TODO clipping may mess with this..
-	// Display 1:1. Required for microui, this also controls character advance.
-	if scale_unity {
-		dst.w = src.w
-		dst.h = src.h
-	}
+	dst := dst
+	src := src
 
+	// X-Clipping
+	scale_width: f32 = f32(src.w) / f32(dst.w)
 	// Left side clip
 	if dst.x < gui.clip.x {
 		delta := gui.clip.x - dst.x // positive
 		dst.x += delta
 		dst.w -= delta
-		// TODO clip the texture as well
+
+		delta_scale := i32(f32(delta) * f32(scale_width))
+		src.x += delta_scale
+		src.w -= delta_scale
 	}
 	// Right side clip
 	if dst.x + dst.w > gui.clip.x + gui.clip.w {
 		delta := (dst.x + dst.w) - (gui.clip.x + gui.clip.w) // positive
 		dst.w -= delta
-		// TODO clip the texture as well
+
+		delta_scale := i32(f32(delta) * f32(scale_width))
+		src.w -= delta_scale
 	}
 	// Early out if the texture ends up not being shown at all.
 	if dst.w <= 0 {
@@ -156,18 +159,24 @@ gpu_render_texture :: proc(
 	}
 
 	// Y-clipping
+	scale_height : f32 = f32(src.h) / f32(dst.h)
 	// Top side clip
 	if dst.y < gui.clip.y {
 		delta := gui.clip.y - dst.y // positive
 		dst.y += delta
 		dst.w -= delta
-		// TODO think about texture clipping
+
+		delta_scale := i32(f32(delta) * f32(scale_height))
+		src.y += delta_scale
+		src.h -= delta_scale
 	}
 	// Bottom side clip
 	if dst.y + dst.h > gui.clip.y + gui.clip.h {
 		delta := (dst.y + dst.h) - (gui.clip.y + gui.clip.h)
 		dst.h -= delta
-		// TODO clip the texture
+
+		delta_scale := i32(f32(delta) * f32(scale_height))
+		src.h -= delta_scale
 	}
 	// Early out if the texture ends up not being shown at all.
 	if dst.h <= 0 {
@@ -304,26 +313,27 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gui.clip = unclipped_rect
 
-	fmt.printf("[UI] Frame Record Start!\n")
+	// fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
 		switch cmd in variant {
 		case ^Command_Text:
-			fmt.printf("  text: %v\n", cmd.str)
+			// fmt.printf("  text: %v\n", cmd.str)
 			// Pull rects from the ui texture atlas
-			// Call editui_render_texture from atlas
 			dst := Rect{cmd.pos.x, cmd.pos.y, 0, 0}
 			for ch in cmd.str do if ch & 0xc0 != 0x80 {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
 				// fmt.printf("Text color: %v", cmd.color)
-				gpu_render_texture(gui, &vertices, &indices, &dst, src, gui.atlas, cmd.color)
+				dst.w = src.w
+				dst.h = src.h
+				gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
 				dst.x += dst.w
 			}
 
 		case ^Command_Rect:
-			fmt.printf("  rect: %v\n", cmd.color)
+			// fmt.printf("  rect: %v\n", cmd.color)
 			draw_flush(gui, &vertices, &indices)
 
 			// Temporary set draw bounds nd use gl.Clear() to draw a rectangle
@@ -349,7 +359,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			gl.Disable(gl.SCISSOR_TEST)
 
 		case ^Command_Icon:
-			fmt.printf("  icon: %v\n", cmd.id)
+			// fmt.printf("  icon: %v\n", cmd.id)
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
@@ -357,24 +367,16 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 				gui,
 				&vertices,
 				&indices,
-				&Rect{x, y, 0, 0},
+				Rect{x, y, src.w, src.h},
 				src,
 				gui.atlas,
 				cmd.color,
 			)
 
 		case ^Command_Clip:
-			fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
+			// fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
+			// Clip information is given in the coordinate system of the entire window.
 			gui.clip = cmd.rect
-		// This case no longer seems necessary with the shift to OpenGl Calls. I had thought
-		// this should alter an offset coordinate system to be used by gpu_render_texture, but
-		// that breaks things. So this codepath is activated now but ignored with seemingly no problem.
-
-		// Instead of shifting the coordinate system, monitor the clip state?
-		// Then if there are pixels outside the clip system, then have to adjust all the dimensions of the rendered quad. Including if the quad is entirely out of view then don't show it at all.
-
-		// Clip information is given in the coordinate system of the entire window.
-		// 
 
 		case ^Command_Jump:
 			// This is handled by mu.next_command_iterator() to call commands in the right sequence
@@ -382,20 +384,19 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			panic("Graphics drawing encountered mu.Command_Jump!")
 
 		case ^Command_Image:
-			fmt.printf("  image\n")
+			// fmt.printf("  image\n")
 
 			gpu_render_texture(
 				gui,
 				&vertices,
 				&indices,
-				&Rect{cmd.dst.x, cmd.dst.y, cmd.dst.w, cmd.dst.h}, // TODO need to give it some space!
+				Rect{cmd.dst.x, cmd.dst.y, cmd.dst.w, cmd.dst.h}, // TODO need to give it some space!
 				cmd.src,
 				cmd.tex,
 				cmd.color,
 				scale_unity = false,
 			)
 		}
-
 
 	}
 

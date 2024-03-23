@@ -258,6 +258,8 @@ Context :: struct {
 	text_input:                      strings.Builder, // uses `_text_store` as backing store with nil_allocator.
 }
 
+// Stack is a fixed capacity array, with a monitored index "head" position. 
+// The intended operation is to use the push() and pop() to add/remove from this ordered list.
 Stack :: struct($T: typeid, $N: int) {
 	idx:   i32,
 	items: [N]T,
@@ -513,6 +515,7 @@ check_clip :: proc(ctx: ^Context, r: Rect) -> Clip {
 	return .PART
 }
 
+// Just get the top layout from the stack
 get_layout :: proc(ctx: ^Context) -> ^Layout {
 	return &ctx.layout_stack.items[ctx.layout_stack.idx - 1]
 }
@@ -657,7 +660,7 @@ input_sdl_events :: proc(ctx: ^Context, event: SDL.Event) {
 	if ctx.hover_root != nil {
 		#partial switch event.type {
 		case .MOUSEWHEEL:
-			input_scroll(ctx, event.wheel.x * 30, event.wheel.y * 30)
+			input_scroll(ctx, event.wheel.x * 30, -event.wheel.y * 30)
 
 		case .TEXTINPUT:
 			input_text(ctx, string(cstring(&event.text.text[0])))
@@ -868,6 +871,7 @@ layout_column :: proc(ctx: ^Context) -> bool {
 	return true
 }
 
+// Critical to use this function to set clip rects correctly! Use -1 to specify unlimited width.
 layout_row :: proc(ctx: ^Context, widths: []i32, height: i32 = 0) {
 	layout := get_layout(ctx)
 	items := len(widths)
@@ -1321,13 +1325,16 @@ number :: proc(
 
 
 image :: proc(ctx: ^Context, tex: Texture, src, dst: Rect) {
-	fmt.printf("got to draw an image texture! %v\n", tex.texture_id)
+
+	// TODO get it to correctly pick up the height of the row from the layout? Or set the layout based on the image?
+	
+	// fmt.printf("got to draw an image texture! %v\n", tex.texture_id)
 	id := get_id(ctx, uintptr(tex.texture_id))
 	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
 	r := layout_next(ctx)
 	r.w = dst.w
 	r.h = dst.h
-	fmt.printf("layout next: %v\n", r)
+	// fmt.printf("layout next: %v\n", r)
 
 	// BUG: the height of this element isn't pushing the layout of the next thing correctly
 	// BUG: this extends outside a window that is clipped
