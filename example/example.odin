@@ -35,14 +35,14 @@ main :: proc() {
 
 	tex_demo: mu.Texture = setup_texture("texture_demo.png")
 
-	vp := viewport_init()
+	vp := viewport_init(1920, 1080) // TODO hardcoded. Maximum screen dimensions
 	vp_texture := mu.Texture {
 		texture_id = vp.framebuffer_texture_id,
 		// TODO need these to be non insane and constant things! link between render calls and this!
-		width      = 1024,
-		height     = 1024,
-		inv_width  = 1.0 / 1024,
-		inv_height  = 1.0 / 1024,
+		width      = 1920,
+		height     = 1080,
+		inv_width  = 1.0 / 1920,
+		inv_height = 1.0 / 1080,
 	}
 
 	main_loop: for {
@@ -115,10 +115,11 @@ main :: proc() {
 
 
 			{
-				viewport_draw(&vp)
-				if mu.window(&gui.ctx, "Framebuffer demo", {400, 500, 300, 300}) {
+				dim : i32 = 256
+				viewport_draw(&vp, dim, dim)
+				if mu.window(&gui.ctx, "Framebuffer demo", {100, 100, 512, 512}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
-					mu.image(&gui.ctx, vp_texture, mu.Rect{0, 0, 1024, 1024}, mu.Rect{0, 0, 1024, 1024})
+					mu.image(&gui.ctx, vp_texture, mu.Rect{0, 0, dim, dim}, mu.Rect{0, 0, 512, 512})
 				}
 			}
 		}
@@ -448,8 +449,8 @@ all_windows :: proc(ctx: ^mu.Context) {
 
 Viewport :: struct {
 	shader:                 mu.Shader,
-	// vertices
-	// indices
+
+	// Representation used for framebuffer rendering
 	framebuffer_id:         u32,
 	framebuffer_texture_id: u32,
 	framebuffer_depth_id:   u32,
@@ -457,6 +458,9 @@ Viewport :: struct {
 	framebuffer_height:     i32,
 	framebuffer_width_max:  i32,
 	framebuffer_height_max: i32,
+
+	// Representation of the texture used for rendering
+	texture:                mu.Texture,
 }
 
 Viewport_Vertex :: struct #packed {
@@ -470,34 +474,39 @@ Viewport_Line :: struct #packed {
 	vert: [2]Viewport_Vertex,
 }
 
-viewport_init :: proc() -> (vp: Viewport) {
+viewport_init :: proc(width, height: i32) -> (vp: Viewport) {
 	program_ok: bool
 
-	// A simple line drawing shader
-	vp.shader.program, program_ok = gl.load_shaders_source(shader_lines_vertex, shader_lines_frag)
-	if !program_ok {
-		panic("Failed to create GLSL program for demo line rendering.")
+	{
+		// A simple line drawing shader
+		vp.shader.program, program_ok = gl.load_shaders_source(shader_lines_vertex, shader_lines_frag)
+		if !program_ok {
+			panic("Failed to create GLSL program for demo line rendering.")
+		}
+		gl.UseProgram(vp.shader.program)
+
+		gl.GenVertexArrays(1, &vp.shader.vao)
+		gl.BindVertexArray(vp.shader.vao)
+
+		gl.GenBuffers(1, &vp.shader.vbo)
+
+		vp.shader.uniforms = gl.get_uniforms_from_program(vp.shader.program)
 	}
-	gl.UseProgram(vp.shader.program)
-
-	gl.GenVertexArrays(1, &vp.shader.vao)
-	gl.BindVertexArray(vp.shader.vao)
-
-	gl.GenBuffers(1, &vp.shader.vbo)
-
-	vp.shader.uniforms = gl.get_uniforms_from_program(vp.shader.program)
-	fmt.printf("Uniforms are: %#v\n", vp.shader.uniforms)
-
-	fmt.printf("Size of Viewport_Vertex: %v bytes\n", size_of(Viewport_Vertex))
-
-	vp.framebuffer_width_max = 1920
-	vp.framebuffer_height_max = 1080
 
 	{
+		// Setup the framebuffer
 		gl.CreateFramebuffers(1, &vp.framebuffer_id)
+		vp.framebuffer_width_max = width
+		vp.framebuffer_height_max = height
 
 		// Color texture
 		gl.CreateTextures(gl.TEXTURE_2D, 1, &vp.framebuffer_texture_id)
+		gl.TextureParameteri(vp.framebuffer_texture_id, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+		gl.TextureParameteri(vp.framebuffer_texture_id, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+		gl.TextureParameteri(vp.framebuffer_texture_id, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(vp.framebuffer_texture_id, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(vp.framebuffer_texture_id, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+		
 		gl.TextureStorage2D(vp.framebuffer_texture_id, 1, gl.RGBA8, vp.framebuffer_width_max, vp.framebuffer_height_max)
 		gl.NamedFramebufferTexture(vp.framebuffer_id, gl.COLOR_ATTACHMENT0, vp.framebuffer_texture_id, 0)
 
@@ -507,11 +516,22 @@ viewport_init :: proc() -> (vp: Viewport) {
 		gl.NamedFramebufferTexture(vp.framebuffer_id, gl.DEPTH_STENCIL_ATTACHMENT, vp.framebuffer_depth_id, 0)
 	}
 
+	{
+		// Setup the ui texture for displaying
+		vp.texture = mu.Texture {
+			texture_id = vp.framebuffer_texture_id,
+			width      = width,
+			inv_width  = 1.0 / f32(width),
+			height     = height,
+			inv_height = 1.0 / f32(height),
+		}
+	}
+
 	return
 }
 
 
-viewport_draw_prepare :: proc(vp: ^Viewport) {
+viewport_draw_prepare :: proc(vp: ^Viewport, width, height: i32) {
 	gl.UseProgram(0)
 
 	gl.UseProgram(vp.shader.program)
@@ -519,8 +539,8 @@ viewport_draw_prepare :: proc(vp: ^Viewport) {
 	gl.BindBuffer(gl.ARRAY_BUFFER, vp.shader.vbo)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, vp.framebuffer_id)
-	gl.Viewport(0, 0, 1024, 1024) // TODO hardcoded
-	gl.ClearColor(0, 0, 0, 0)
+	gl.Viewport(0, 0, width, height) // TODO hardcoded
+	gl.ClearColor(0, 0, 0, 1)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 
@@ -528,13 +548,13 @@ viewport_draw_prepare :: proc(vp: ^Viewport) {
 	gl.EnableVertexAttribArray(0) // pos
 	gl.EnableVertexAttribArray(1) // color in
 
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos)) 
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos))
 	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, color))
 }
 
 
-viewport_draw :: proc(vp: ^Viewport) {
-	viewport_draw_prepare(vp)
+viewport_draw :: proc(vp: ^Viewport, width, height: i32) {
+	viewport_draw_prepare(vp, width, height)
 
 	// context.temp_allocator is assumed to be cleared once per frame (no leak here)
 	lineset := make([dynamic]Viewport_Line, 0, 128, context.temp_allocator)
@@ -547,9 +567,46 @@ viewport_draw :: proc(vp: ^Viewport) {
 		res.vert[1].color = {0.5, 0.5, 0.8, 1.0}
 		return
 	}
-	append(&lineset, line({0, 0, 0.1}, {0.9, 0.9, 0.9}))
-	append(&lineset, line({0, 0, 0.1}, {-0.5, -0.1, 0.2}))
-	append(&lineset, line({0.1, 0.2, .3}, {-0.2, 0.2, 0.5}))
+	append(&lineset, line({0.2, 0.1, 0.0}, {0.2, 0.6, 0.0}))
+	append(&lineset, line({0.2, 0.6, 0.5}, {0.2, 0.6, 0.0}))
+	append(&lineset, line({0.2, 0.6, 0.5}, {0.2, 0.1, 0.5}))
+	append(&lineset, line({0.2, 0.1, 0.0}, {0.2, 0.1, 0.5}))
+
+	// Draw a coordinate system to more easily debug some things
+	{
+		x := Viewport_Line{}
+		x.vert[0] = Viewport_Vertex {
+			pos = {0.0, 0.0, 0.0},
+			color = {1.0, 0.0, 0.0, 1.0},
+		}
+		x.vert[1] = Viewport_Vertex {
+			pos = {1.0, 0.0, 0.0},
+			color = {1.0, 0.0, 0.0, 1.0},
+		}
+		append(&lineset, x)
+
+		y := Viewport_Line{}
+		y.vert[0] = Viewport_Vertex {
+			pos = {0.0, 0.0, 0.0},
+			color = {0.0, 1.0, 0.0, 1.0},
+		}
+		y.vert[1] = Viewport_Vertex {
+			pos = {0.0, 1.0, 0.0},
+			color = {0.0, 1.0, 0.0, 1.0},
+		}
+		append(&lineset, y)
+
+		z := Viewport_Line{}
+		z.vert[0] = Viewport_Vertex {
+			pos = {0.0, 0.0, 0.0},
+			color = {0.0, 0.0, 1.0, 1.0},
+		}
+		z.vert[1] = Viewport_Vertex {
+			pos = {0.0, 0.0, 1.0},
+			color = {0.0, 0.0, 1.0, 1.0},
+		}
+		append(&lineset, z)
+	}
 
 	viewport_draw_flush(vp, &lineset)
 }
@@ -557,11 +614,10 @@ viewport_draw :: proc(vp: ^Viewport) {
 
 viewport_draw_flush :: proc(vp: ^Viewport, lineset: ^[dynamic]Viewport_Line) {
 
-	tf := glm.mat4{1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1} // 
-
 	proj := glm.mat4Ortho3d(-1, 1, -1, 1, 0.1, 20) // half widths, half heights, near, far
-	view := glm.mat4LookAt({0, 0.3 * math.sin(app.t), 2}, {0, 0, 0}, {0, 1, 0}) // eye location, what to look at, up vector
-	u_transform := proj * view * tf
+	view := glm.mat4LookAt({2 + 0.05 * math.cos(app.t*0.9), 2 + 0.3 * math.sin(app.t), 1.0}, {0, 0, 0}, {0, 0, 1}) // eye location, what to look at, up vector
+	flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
+	u_transform := flip_view * proj * view 
 	gl.UniformMatrix4fv(vp.shader.uniforms["MVP"].location, 1, false, &u_transform[0, 0])
 
 	// Push data to the GPU and call draw!

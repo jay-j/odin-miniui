@@ -80,6 +80,8 @@ draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 // User Texture
 Texture :: struct {
 	texture_id: u32, // OpenGL
+
+	// These are the raw (unscaled, uncropped) dimensions of the texture
 	width:      i32,
 	height:     i32,
 	inv_width:  f32,
