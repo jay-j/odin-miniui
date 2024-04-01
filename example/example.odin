@@ -102,11 +102,12 @@ main :: proc() {
 				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
-			if mu.window(&gui.ctx, "image here", {700, 200, 300, 300}) {
+			if mu.window(&gui.ctx, "image here", {760, 200, 300, 300}) {
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.layout_row(&gui.ctx, {-1}, 128)
-				mu.image(&gui.ctx, tex_demo, mu.Rect{0, 0, tex_demo.width, tex_demo.height}, mu.Rect{0, 0, 256, 256}) // TODO make this compliant with the above spec!
+				// mu.image(&gui.ctx, tex_demo, mu.Rect{0, 0, tex_demo.width, tex_demo.height}, mu.Rect{0, 0, 256, 256}) // TODO make this compliant with the above spec!
+				mu.image_scaled(&gui.ctx, tex_demo)
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image above here. again want long text example")
 			}
@@ -114,20 +115,43 @@ main :: proc() {
 			all_windows(&gui.ctx)
 
 			{
-				dim: i32 = 256
 				win: ^mu.Container
-				if mu.window(&gui.ctx, "Framebuffer demo", {100, 100, 512, 512}) {
-					win = mu.get_current_container(&gui.ctx)
-					viewport_draw(&vp, win.rect.w, win.rect.h)
+				if mu.window(&gui.ctx, "Framebuffer demo", {50, 100, 512, 512}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
-					mu.image(&gui.ctx, vp_texture, mu.Rect{0, 0, win.rect.w, win.rect.h}, mu.Rect{0, 0, win.rect.w, win.rect.h})
+					mu.label(&gui.ctx, "Hello this should be above the image")
+	// mu.layout_begin_column(&gui.ctx)
+					mu.layout_row(&gui.ctx, {-1}, -1)
+					mu.begin_panel(&gui.ctx, "framebuffer panel", opt = {mu.Opt.EXPANDED})
+					// win = mu.get_current_container(&gui.ctx) // rect (big), body (big), content (expanding)
+	// layout.body.w is correct! bug layout.body.h is not correct.. it is just single text high
+	// layout.size is not useful, layout.max is not useful at all, not layout row or anything...
+					layout := mu.get_layout(&gui.ctx)
+		r := mu.layout_next(&gui.ctx)
+					// r := mu.get_clip_rect(&gui.ctx)
+					vpw := r.w
+					vph :=  r.h
+		fmt.printf("size: %v\n", r)
+					// viewport_draw(&vp, win.rect.w, win.rect.h)
+					// mu.layout_row(&gui.ctx, {win.rect.w}, win.rect.h)
+					viewport_draw(&vp, vpw, vph)
+					mu.layout_row(&gui.ctx, {vpw}, vph)
+					// BUG: this currently is rendering without the padding on the right
+					// BUG: the text isn't being moved down the correct amount - what causes the y advance?
+					// mu.image_raw(&gui.ctx, vp_texture, mu.Rect{0, 0, win.rect.w, win.rect.h}, mu.Rect{0, 0, win.rect.w, win.rect.h})
+					mu.image_raw(&gui.ctx, vp_texture)
+	mu.end_panel(&gui.ctx)
+					// mu.layout_end_column(&gui.ctx)
+					// mu.layout_row(&gui.ctx, {-1}, 0)
+					// mu.label(&gui.ctx, "Hello this should be below the image")
 				}
 
-				if mu.window(&gui.ctx, "framebuffer mini window", {300, 100, 512, 512}) {
+				if mu.window(&gui.ctx, "framebuffer mini window", {450, 100, 300, 300}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
 					mu.label(&gui.ctx, "label above the small framebuffer")
 					mu.layout_row(&gui.ctx, {-1}, 128)
-					mu.image(&gui.ctx, vp_texture, mu.Rect{0, 0, win.rect.w, win.rect.h}, mu.Rect{0, 0, 128, 128})
+					// mu.image_raw(&gui.ctx, vp_texture, src = mu.Rect{0, 0, win.rect.w, win.rect.h}, dst = mu.Rect{0, 0, 128, 128})
+					mu.image_raw(&gui.ctx, vp_texture)
+					// mu.image_scaled(&gui.ctx, vp_texture)
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "framebuffer above this?")
 				}
@@ -258,12 +282,10 @@ app_framerate_control :: proc() {
 Viewport :: struct {
 	shader:                 mu.Shader,
 
-	// Representation used for framebuffer rendering
+	// Representation used for framebuffer definition
 	framebuffer_id:         u32,
 	framebuffer_texture_id: u32,
 	framebuffer_depth_id:   u32,
-	framebuffer_width:      i32,
-	framebuffer_height:     i32,
 	framebuffer_width_max:  i32,
 	framebuffer_height_max: i32,
 
@@ -339,6 +361,7 @@ viewport_init :: proc(width, height: i32) -> (vp: Viewport) {
 }
 
 
+// Activate shader & uniforms; likely to be done only once even if multiple GPU draw calls are actually used
 viewport_draw_prepare :: proc(vp: ^Viewport, width, height: i32) {
 	gl.UseProgram(0)
 
@@ -358,6 +381,14 @@ viewport_draw_prepare :: proc(vp: ^Viewport, width, height: i32) {
 
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, pos))
 	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Viewport_Vertex), offset_of(Viewport_Vertex, color))
+
+	// NOTE: A real implementation should do better than this about camera control!
+	ar: f32 = f32(width) / f32(height)
+	proj := glm.mat4Ortho3d(-ar, ar, -1, 1, 0.1, 20) // half widths, half heights, near, far
+	view := glm.mat4LookAt({2 + 0.05 * math.cos(app.t * 0.9), 2 + 0.3 * math.sin(app.t), 1.0}, {0, 0, 0}, {0, 0, 1}) // eye location, what to look at, up vector
+	flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
+	u_transform := flip_view * proj * view
+	gl.UniformMatrix4fv(vp.shader.uniforms["MVP"].location, 1, false, &u_transform[0, 0])
 }
 
 
@@ -420,20 +451,12 @@ viewport_draw :: proc(vp: ^Viewport, width, height: i32) {
 }
 
 
+// Push data to the GPU and call draw! CAUTION: also gives up the framebuffer.
 viewport_draw_flush :: proc(vp: ^Viewport, lineset: ^[dynamic]Viewport_Line) {
-
-	proj := glm.mat4Ortho3d(-1, 1, -1, 1, 0.1, 20) // half widths, half heights, near, far
-	view := glm.mat4LookAt({2 + 0.05 * math.cos(app.t * 0.9), 2 + 0.3 * math.sin(app.t), 1.0}, {0, 0, 0}, {0, 0, 1}) // eye location, what to look at, up vector
-	flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
-	u_transform := flip_view * proj * view
-	gl.UniformMatrix4fv(vp.shader.uniforms["MVP"].location, 1, false, &u_transform[0, 0])
-
-	// Push data to the GPU and call draw!
 	bytes_to_push := len(lineset) * size_of(lineset[0])
 	lines_to_draw := i32(2 * len(lineset))
 	gl.BufferData(gl.ARRAY_BUFFER, bytes_to_push, raw_data(lineset[:]), gl.DYNAMIC_DRAW)
 	gl.DrawArrays(gl.LINES, 0, lines_to_draw)
-
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
 

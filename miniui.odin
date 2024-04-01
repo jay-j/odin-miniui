@@ -375,10 +375,7 @@ end :: proc(ctx: ^Context) {
 	ctx.updated_focus = false
 
 	/* bring hover root to front if mouse was pressed */
-	if mouse_pressed(ctx) &&
-	   ctx.next_hover_root != nil &&
-	   ctx.next_hover_root.zindex < ctx.last_zindex &&
-	   ctx.next_hover_root.zindex >= 0 {
+	if mouse_pressed(ctx) && ctx.next_hover_root != nil && ctx.next_hover_root.zindex < ctx.last_zindex && ctx.next_hover_root.zindex >= 0 {
 		bring_to_front(ctx, ctx.next_hover_root)
 	}
 
@@ -406,15 +403,11 @@ end :: proc(ctx: ^Context) {
 			cmd.dst = rawptr(uintptr(cnt.head) + size_of(Command_Jump))
 		} else {
 			prev := ctx.root_list.items[i - 1]
-			prev.tail.variant.(^Command_Jump).dst = rawptr(
-				uintptr(cnt.head) + size_of(Command_Jump),
-			)
+			prev.tail.variant.(^Command_Jump).dst = rawptr(uintptr(cnt.head) + size_of(Command_Jump))
 		}
 		/* make the last container's tail jump to the end of command list */
 		if i == n - 1 {
-			cnt.tail.variant.(^Command_Jump).dst = rawptr(
-				&ctx.command_list.items[ctx.command_list.idx],
-			)
+			cnt.tail.variant.(^Command_Jump).dst = rawptr(&ctx.command_list.items[ctx.command_list.idx])
 		}
 	}
 }
@@ -431,15 +424,8 @@ get_id :: proc {
 	get_id_rawptr,
 	get_id_uintptr,
 }
-get_id_string :: #force_inline proc(ctx: ^Context, str: string) -> Id {return get_id_bytes(
-		ctx,
-		transmute([]byte)str,
-	)}
-get_id_rawptr :: #force_inline proc(
-	ctx: ^Context,
-	data: rawptr,
-	size: int,
-) -> Id {return get_id_bytes(ctx, ([^]u8)(data)[:size])}
+get_id_string :: #force_inline proc(ctx: ^Context, str: string) -> Id {return get_id_bytes(ctx, transmute([]byte)str)}
+get_id_rawptr :: #force_inline proc(ctx: ^Context, data: rawptr, size: int) -> Id {return get_id_bytes(ctx, ([^]u8)(data)[:size])}
 get_id_uintptr :: #force_inline proc(ctx: ^Context, ptr: uintptr) -> Id {
 	ptr := ptr
 	return get_id_bytes(ctx, ([^]u8)(&ptr)[:size_of(ptr)])
@@ -469,22 +455,10 @@ push_id :: proc {
 	push_id_rawptr,
 	push_id_uintptr,
 }
-push_id_string :: #force_inline proc(ctx: ^Context, str: string) {push(
-		&ctx.id_stack,
-		get_id(ctx, str),
-	)}
-push_id_rawptr :: #force_inline proc(ctx: ^Context, data: rawptr, size: int) {push(
-		&ctx.id_stack,
-		get_id(ctx, data, size),
-	)}
-push_id_uintptr :: #force_inline proc(ctx: ^Context, ptr: uintptr) {push(
-		&ctx.id_stack,
-		get_id(ctx, ptr),
-	)}
-push_id_bytes :: #force_inline proc(ctx: ^Context, bytes: []byte) {push(
-		&ctx.id_stack,
-		get_id(ctx, bytes),
-	)}
+push_id_string :: #force_inline proc(ctx: ^Context, str: string) {push(&ctx.id_stack, get_id(ctx, str))}
+push_id_rawptr :: #force_inline proc(ctx: ^Context, data: rawptr, size: int) {push(&ctx.id_stack, get_id(ctx, data, size))}
+push_id_uintptr :: #force_inline proc(ctx: ^Context, ptr: uintptr) {push(&ctx.id_stack, get_id(ctx, ptr))}
+push_id_bytes :: #force_inline proc(ctx: ^Context, bytes: []byte) {push(&ctx.id_stack, get_id(ctx, bytes))}
 
 pop_id :: proc(ctx: ^Context) {
 	pop(&ctx.id_stack)
@@ -975,31 +949,17 @@ in_hover_root :: proc(ctx: ^Context) -> bool {
 	return false
 }
 
-draw_control_frame :: proc(
-	ctx: ^Context,
-	id: Id,
-	rect: Rect,
-	colorid: Color_Type,
-	opt := Options{},
-) {
+draw_control_frame :: proc(ctx: ^Context, id: Id, rect: Rect, colorid: Color_Type, opt := Options{}) {
 	if .NO_FRAME in opt {
 		return
 	}
 	assert(colorid == .BUTTON || colorid == .BASE)
 	colorid := colorid
-	colorid = Color_Type(
-		int(colorid) + int((ctx.focus_id == id) ? 2 : (ctx.hover_id == id) ? 1 : 0),
-	)
+	colorid = Color_Type(int(colorid) + int((ctx.focus_id == id) ? 2 : (ctx.hover_id == id) ? 1 : 0))
 	ctx.draw_frame(ctx, rect, colorid)
 }
 
-draw_control_text :: proc(
-	ctx: ^Context,
-	str: string,
-	rect: Rect,
-	colorid: Color_Type,
-	opt := Options{},
-) {
+draw_control_text :: proc(ctx: ^Context, str: string, rect: Rect, colorid: Color_Type, opt := Options{}) {
 	pos: Vec2
 	font := ctx.style.font
 	tw := ctx.text_width(font, str)
@@ -1017,11 +977,7 @@ draw_control_text :: proc(
 }
 
 mouse_over :: proc(ctx: ^Context, rect: Rect) -> bool {
-	return(
-		rect_overlaps_vec2(rect, ctx.mouse_pos) &&
-		rect_overlaps_vec2(get_clip_rect(ctx), ctx.mouse_pos) &&
-		in_hover_root(ctx) \
-	)
+	return rect_overlaps_vec2(rect, ctx.mouse_pos) && rect_overlaps_vec2(get_clip_rect(ctx), ctx.mouse_pos) && in_hover_root(ctx)
 }
 
 
@@ -1096,14 +1052,7 @@ label :: proc(ctx: ^Context, text: string) {
 
 
 // A button with text OR icon - not both!
-button :: proc(
-	ctx: ^Context,
-	label: string,
-	icon: Icon = .NONE,
-	opt: Options = {.ALIGN_CENTER},
-) -> (
-	res: Result_Set,
-) {
+button :: proc(ctx: ^Context, label: string, icon: Icon = .NONE, opt: Options = {.ALIGN_CENTER}) -> (res: Result_Set) {
 	id := len(label) > 0 ? get_id(ctx, label) : get_id(ctx, uintptr(icon))
 	r := layout_next(ctx)
 	update_control(ctx, id, r, opt)
@@ -1142,16 +1091,7 @@ checkbox :: proc(ctx: ^Context, label: string, state: ^bool) -> (res: Result_Set
 	return
 }
 
-textbox_raw :: proc(
-	ctx: ^Context,
-	textbuf: []u8,
-	textlen: ^int,
-	id: Id,
-	r: Rect,
-	opt := Options{},
-) -> (
-	res: Result_Set,
-) {
+textbox_raw :: proc(ctx: ^Context, textbuf: []u8, textlen: ^int, id: Id, r: Rect, opt := Options{}) -> (res: Result_Set) {
 	update_control(ctx, id, r, opt | {.HOLD_FOCUS})
 
 	if ctx.focus_id == id {
@@ -1284,15 +1224,7 @@ slider :: proc(
 }
 
 // CAUTION: The format string is for interpreting the value, not for adding a label
-number :: proc(
-	ctx: ^Context,
-	value: ^Real,
-	step: Real,
-	fmt_string: string = SLIDER_FMT,
-	opt: Options = {.ALIGN_CENTER},
-) -> (
-	res: Result_Set,
-) {
+number :: proc(ctx: ^Context, value: ^Real, step: Real, fmt_string: string = SLIDER_FMT, opt: Options = {.ALIGN_CENTER}) -> (res: Result_Set) {
 	id := get_id(ctx, uintptr(value))
 	base := layout_next(ctx)
 	last := value^
@@ -1324,23 +1256,59 @@ number :: proc(
 }
 
 
-image :: proc(ctx: ^Context, tex: Texture, src, dst: Rect) {
+// Display an image, scaled down to fit within the restrictions of the layout but preserving
+// the aspect ratio of the source image.
+image_scaled :: proc(ctx: ^Context, tex: Texture) {
+	// get layout space according to the mode
+	// TODO how do I reserve space for margins?
+
+	id := get_id(ctx, uintptr(tex.texture_id))
+	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
+	r := layout_next(ctx)
+	// correct the aspect ratio..
+	// what can be set on the layout? restricted width, (and/or?) restricted height
+	// TODO preserve the image aspect ratio
+	layout := get_layout(ctx)
+	if layout.size.y == 0 { // not the right criteria to look at
+		// auto scale the height. keep the aspect ratio identical and take the width as a given
+		aspect_ratio := f32(tex.width) / f32(tex.height)
+		r.h = i32( f32(r.w) / aspect_ratio)
+	}
+
+	// TODO nicer if 255 isn't the full color designation
+	draw_image(ctx, tex, dst = r, src = Rect{0, 0, tex.width, tex.height}, color = {255, 255, 255, 255})
+}
+
+
+// For framebuffer like applications where there should be no scaling - crop the image for 1:1 pixels
+// Preserve the bounds of the layout but fill them with 1:1
+image_raw :: proc(ctx: ^Context, tex: Texture){
+	// Containers are window & panel - not what is needed here
+	// 
 
 	// TODO get it to correctly pick up the height of the row from the layout? Or set the layout based on the image?
-	
+
 	// fmt.printf("got to draw an image texture! %v\n", tex.texture_id)
 	id := get_id(ctx, uintptr(tex.texture_id))
 	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
 	r := layout_next(ctx)
-	r.w = dst.w
-	r.h = dst.h
+		fmt.printf("internal size: %v\n", r)
+	// r.w = dst.w
+	// r.h = dst.h
+
+	// BUG TODO how is this being used? it doesn't seem to do what I need it to, it is being weird.. 
+	// either I call this earlier and some stuff works but call it later and other other aspects work
+	// Push the content of the next thing down accordingly
+		layout := get_layout(ctx)
+	// layout_set_next(ctx, Rect{r.x, r.y, dst.w, dst.h}, false)
+	// layout_set_next(ctx, Rect{0, 0, dst.w, dst.h}, false)
+	// layout_set_next(ctx, Rect{0, 0, dst.w, dst.h}, true)
 	// fmt.printf("layout next: %v\n", r)
 
 	// BUG: the height of this element isn't pushing the layout of the next thing correctly
-	// BUG: this extends outside a window that is clipped
 	// BUG: why is my texture set to color suppression?
 	// the mu.panel() thing may be a way to get stuff organized, or show examples of how to get the available space
-	// there is an internal
+	src := Rect{0, 0, min(r.w, tex.width), min(r.h, tex.height)}
 
 	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255}) // 255 is what gives it full color....
 }
@@ -1376,12 +1344,7 @@ _header :: proc(ctx: ^Context, label: string, is_treenode: bool, opt := Options{
 	} else {
 		draw_control_frame(ctx, id, r, .BUTTON)
 	}
-	draw_icon(
-		ctx,
-		expanded ? .EXPANDED : .COLLAPSED,
-		Rect{r.x, r.y, r.h, r.h},
-		ctx.style.colors[.TEXT],
-	)
+	draw_icon(ctx, expanded ? .EXPANDED : .COLLAPSED, Rect{r.x, r.y, r.h, r.h}, ctx.style.colors[.TEXT])
 	r.x += r.h - ctx.style.padding
 	r.w -= r.h - ctx.style.padding
 	draw_control_text(ctx, label, r, .TEXT)
@@ -1498,8 +1461,7 @@ begin_root_container :: proc(ctx: ^Context, cnt: ^Container) {
 	cnt.head = push_jump(ctx, nil)
 	/* set as hover root if the mouse is overlapping this container and it has a
 	** higher zindex than the current hover root */
-	if rect_overlaps_vec2(cnt.rect, ctx.mouse_pos) &&
-	   (ctx.next_hover_root == nil || cnt.zindex > ctx.next_hover_root.zindex) {
+	if rect_overlaps_vec2(cnt.rect, ctx.mouse_pos) && (ctx.next_hover_root == nil || cnt.zindex > ctx.next_hover_root.zindex) {
 		ctx.next_hover_root = cnt
 	}
 	/* clipping is reset here in case a root-container is made within
