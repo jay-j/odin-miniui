@@ -1282,34 +1282,18 @@ image_scaled :: proc(ctx: ^Context, tex: Texture) {
 
 // For framebuffer like applications where there should be no scaling - crop the image for 1:1 pixels
 // Preserve the bounds of the layout but fill them with 1:1
-image_raw :: proc(ctx: ^Context, tex: Texture, r: Rect){
-	// Containers are window & panel - not what is needed here
+// Call this *before* calling the commands to draw a viewport, so the viewport drawing knows what size for this frame
+image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32){
 	// Internally calling r := layout_next() changes the layout, so the wrong answer is gotten
 
-	// TODO get it to correctly pick up the height of the row from the layout? Or set the layout based on the image?
-
-	// r := layout_next(ctx)
-	// fmt.printf("got to draw an image texture! %v\n", tex.texture_id)
 	id := get_id(ctx, uintptr(tex.texture_id))
-	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
-	// r.w = dst.w
-	// r.h = dst.h
-		layout := get_layout(ctx)
+	layout := get_layout(ctx)
+	r := layout_next(ctx)
 
-	// BUG TODO how is this being used? it doesn't seem to do what I need it to, it is being weird.. 
-	// either I call this earlier and some stuff works but call it later and other other aspects work
-	// Push the content of the next thing down accordingly
-	// layout_set_next(ctx, Rect{r.x, r.y, dst.w, dst.h}, false)
-	// layout_set_next(ctx, Rect{0, 0, dst.w, dst.h}, false)
-	// layout_set_next(ctx, Rect{0, 0, dst.w, dst.h}, true)
-	// fmt.printf("layout next: %v\n", r)
-
-	// BUG: the height of this element isn't pushing the layout of the next thing correctly
-	// BUG: why is my texture set to color suppression?
-	// the mu.panel() thing may be a way to get stuff organized, or show examples of how to get the available space
 	src := Rect{0, 0, min(r.w, tex.width), min(r.h, tex.height)}
 
 	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255}) // 255 is what gives it full color....
+	return r.w, r.h
 }
 
 

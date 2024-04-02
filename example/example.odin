@@ -119,32 +119,10 @@ main :: proc() {
 				if mu.window(&gui.ctx, "Framebuffer demo", {50, 100, 512, 512}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
 					mu.label(&gui.ctx, "Hello this should be above the image")
-	// mu.layout_begin_column(&gui.ctx)
-					mu.layout_row(&gui.ctx, {-1}, -1)
-					// mu.begin_panel(&gui.ctx, "framebuffer panel", opt = {mu.Opt.EXPANDED})
-					mu.begin_panel(&gui.ctx, "framebuffer panel")
 
-					// win = mu.get_current_container(&gui.ctx) // rect (big), body (big), content (expanding)
-	// layout.body.w is correct! bug layout.body.h is not correct.. it is just single text high
-	// layout.size is not useful, layout.max is not useful at all, not layout row or anything...
-	mu.layout_row(&gui.ctx, {-1}, -1)
-					layout := mu.get_layout(&gui.ctx)
-		r := mu.layout_next(&gui.ctx)
-					// r := mu.get_clip_rect(&gui.ctx)
-					vpw := r.w
-					vph :=  r.h
-					// viewport_draw(&vp, win.rect.w, win.rect.h)
-					// mu.layout_row(&gui.ctx, {win.rect.w}, win.rect.h)
+					mu.layout_row(&gui.ctx, {-1}, -1)
+					vpw, vph := mu.image_raw(&gui.ctx, vp_texture)
 					viewport_draw(&vp, vpw, vph)
-					// mu.layout_row(&gui.ctx, {vpw}, vph)
-					// BUG: this currently is rendering without the padding on the right
-					// BUG: the text isn't being moved down the correct amount - what causes the y advance?
-					// mu.image_raw(&gui.ctx, vp_texture, mu.Rect{0, 0, win.rect.w, win.rect.h}, mu.Rect{0, 0, win.rect.w, win.rect.h})
-					mu.image_raw(&gui.ctx, vp_texture, r)
-	mu.end_panel(&gui.ctx)
-					// mu.layout_end_column(&gui.ctx)
-					// mu.layout_row(&gui.ctx, {-1}, 0)
-					// mu.label(&gui.ctx, "Hello this should be below the image")
 				}
 
 				if mu.window(&gui.ctx, "framebuffer mini window", {450, 100, 300, 300}) {
@@ -152,8 +130,8 @@ main :: proc() {
 					mu.label(&gui.ctx, "label above the small framebuffer")
 					mu.layout_row(&gui.ctx, {-1}, 128)
 					// mu.image_raw(&gui.ctx, vp_texture, src = mu.Rect{0, 0, win.rect.w, win.rect.h}, dst = mu.Rect{0, 0, 128, 128})
-		r := mu.layout_next(&gui.ctx)
-					mu.image_raw(&gui.ctx, vp_texture, r)
+					r := mu.layout_next(&gui.ctx)
+					mu.image_raw(&gui.ctx, vp_texture)
 					// mu.image_scaled(&gui.ctx, vp_texture)
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "framebuffer above this?")
