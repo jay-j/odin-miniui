@@ -106,7 +106,6 @@ main :: proc() {
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.layout_row(&gui.ctx, {-1}, 128)
-				// mu.image(&gui.ctx, tex_demo, mu.Rect{0, 0, tex_demo.width, tex_demo.height}, mu.Rect{0, 0, 256, 256}) // TODO make this compliant with the above spec!
 				mu.image_scaled(&gui.ctx, tex_demo)
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image above here. again want long text example")
@@ -116,25 +115,37 @@ main :: proc() {
 
 			{
 				win: ^mu.Container
+				vpw, vph: i32
+
+				// A primary viewport display! Queueing the image draw command first allows the
+				// framebuffer to be rendered at the exact required output resolution.
 				if mu.window(&gui.ctx, "Framebuffer demo", {50, 100, 512, 512}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
 					mu.label(&gui.ctx, "Hello this should be above the image")
 
 					mu.layout_row(&gui.ctx, {-1}, -1)
-					vpw, vph := mu.image_raw(&gui.ctx, vp_texture)
+					vpw, vph = mu.image_raw(&gui.ctx, vp_texture)
 					viewport_draw(&vp, vpw, vph)
 				}
 
+				// Secondary displays of the framebuffer texture (e.g. minimap)
 				if mu.window(&gui.ctx, "framebuffer mini window", {450, 100, 300, 300}) {
 					mu.layout_row(&gui.ctx, {-1}, 0)
 					mu.label(&gui.ctx, "label above the small framebuffer")
+
+					// This slot is too wide for the image
 					mu.layout_row(&gui.ctx, {-1}, 128)
-					// mu.image_raw(&gui.ctx, vp_texture, src = mu.Rect{0, 0, win.rect.w, win.rect.h}, dst = mu.Rect{0, 0, 128, 128})
-					r := mu.layout_next(&gui.ctx)
-					mu.image_raw(&gui.ctx, vp_texture)
-					// mu.image_scaled(&gui.ctx, vp_texture)
+					mu.image_scaled(&gui.ctx, vp_texture, src = mu.Rect{w = vpw, h = vph})
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "framebuffer above this?")
+
+					// This slot is too narrow for the image
+					mu.layout_row(&gui.ctx, {32, 32, -1}, 200)
+					mu.label(&gui.ctx, "left")
+					mu.image_scaled(&gui.ctx, vp_texture, src = mu.Rect{w = vpw, h = vph})
+					mu.label(&gui.ctx, "right")
+					mu.layout_row(&gui.ctx, {-1})
+					mu.label(&gui.ctx, "bottom")
 				}
 			}
 		}

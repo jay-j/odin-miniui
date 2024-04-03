@@ -799,6 +799,8 @@ draw_icon :: proc(ctx: ^Context, id: Icon, rect: Rect, color: Color) {
 }
 
 
+// Low level procedure to push an image-drawing command into the queue.
+// TODO nicer if 255 isn't the full color designation
 draw_image :: proc(ctx: ^Context, tex: Texture, dst, src: Rect, color: Color) {
 	clipped := check_clip(ctx, dst)
 	switch clipped {
@@ -1258,41 +1260,68 @@ number :: proc(ctx: ^Context, value: ^Real, step: Real, fmt_string: string = SLI
 
 // Display an image, scaled down to fit within the restrictions of the layout but preserving
 // the aspect ratio of the source image.
-image_scaled :: proc(ctx: ^Context, tex: Texture) {
-	// get layout space according to the mode
-	// TODO how do I reserve space for margins?
+image_scaled_full :: proc(ctx: ^Context, tex: Texture) {
+	aspect_ratio := f32(tex.width) / f32(tex.height)
 
 	id := get_id(ctx, uintptr(tex.texture_id))
-	// cnt := internal_get_container(ctx, ctx.last_id, Options{})
 	r := layout_next(ctx)
-	// correct the aspect ratio..
-	// what can be set on the layout? restricted width, (and/or?) restricted height
-	// TODO preserve the image aspect ratio
 	layout := get_layout(ctx)
-	if layout.size.y == 0 { // not the right criteria to look at
-		// auto scale the height. keep the aspect ratio identical and take the width as a given
-		aspect_ratio := f32(tex.width) / f32(tex.height)
-		r.h = i32( f32(r.w) / aspect_ratio)
+	limit_aspect_ratio := f32(r.w) / f32(r.h)
+
+	if aspect_ratio >= limit_aspect_ratio {
+		// Image is too wide! Scale according to final desired width.
+		r.h = i32(aspect_ratio * f32(r.w))
+
+	} else {
+		// Image is too tall! Scale according to final desired height.
+		r.w = i32(f32(r.h) / aspect_ratio)
 	}
 
-	// TODO nicer if 255 isn't the full color designation
 	draw_image(ctx, tex, dst = r, src = Rect{0, 0, tex.width, tex.height}, color = {255, 255, 255, 255})
 }
 
 
-// For framebuffer like applications where there should be no scaling - crop the image for 1:1 pixels
-// Preserve the bounds of the layout but fill them with 1:1
-// Call this *before* calling the commands to draw a viewport, so the viewport drawing knows what size for this frame
-image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32){
-	// Internally calling r := layout_next() changes the layout, so the wrong answer is gotten
+// Display an image, scaled down to fit within the restrictions of the layout but preserving
+// the aspect ratio of the source image.
+// This variant has an additional argument to not show the the full source texture. For example, in 
+// with viewport framebuffer usecases where the currently-active view is smaller than the backing texture.
+image_scaled_partial :: proc(ctx: ^Context, tex: Texture, src: Rect) {
+	aspect_ratio := f32(src.w) / f32(src.h)
 
+	id := get_id(ctx, uintptr(tex.texture_id))
+	r := layout_next(ctx)
+	limit_aspect_ratio := f32(r.w) / f32(r.h)
+
+	if aspect_ratio >= limit_aspect_ratio {
+		// Image is too wide! Scale according to final desired width.
+		r.h = i32(aspect_ratio * f32(r.w))
+
+	} else {
+		// Image is too tall! Scale according to final desired height.
+		r.w = i32(f32(r.h) / aspect_ratio)
+	}
+
+	draw_image(ctx, tex, dst = r, src = src, color = {255, 255, 255, 255})
+}
+
+
+image_scaled :: proc {
+	image_scaled_full,
+	image_scaled_partial,
+}
+
+
+// For showing textures in framebuffer-viewport-type applications where there should be no scaling,
+// but instead the source image is cropped for a 1:1 match with the final display size.
+// Call this *before* calling the commands to draw a viewport, so the viewport drawing knows what size for this frame
+image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32) {
 	id := get_id(ctx, uintptr(tex.texture_id))
 	layout := get_layout(ctx)
 	r := layout_next(ctx)
 
 	src := Rect{0, 0, min(r.w, tex.width), min(r.h, tex.height)}
 
-	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255}) // 255 is what gives it full color....
+	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255})
 	return r.w, r.h
 }
 
