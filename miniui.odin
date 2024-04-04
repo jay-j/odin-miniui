@@ -66,6 +66,7 @@ Color_Type :: enum u32 {
 	BASE_FOCUS = BASE + 2,
 	SCROLL_BASE,
 	SCROLL_THUMB,
+	READONLY,
 }
 
 Icon :: enum u32 {
@@ -98,6 +99,7 @@ Opt :: enum u32 {
 	POPUP,
 	CLOSED,
 	EXPANDED,
+	READONLY,
 }
 Options :: distinct bit_set[Opt;u32]
 
@@ -301,6 +303,7 @@ default_style := Style {
 		.BASE_FOCUS = {40, 40, 40, 255},
 		.SCROLL_BASE = {43, 43, 43, 255},
 		.SCROLL_THUMB = {30, 30, 30, 255},
+		.READONLY = {150, 150, 150, 255},
 	},
 }
 
@@ -1006,11 +1009,14 @@ update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 		}
 	}
 
-	if ctx.hover_id == id {
-		if mouse_pressed(ctx) {
-			set_focus(ctx, id)
-		} else if !mouseover {
-			ctx.hover_id = 0
+	// Block the mouse *press* response if read only, while permitting other interactions.
+	if .READONLY not_in opt {
+		if ctx.hover_id == id {
+			if mouse_pressed(ctx) {
+				set_focus(ctx, id)
+			} else if !mouseover {
+				ctx.hover_id = 0
+			}
 		}
 	}
 }
@@ -1054,42 +1060,55 @@ label :: proc(ctx: ^Context, text: string) {
 
 
 // A button with text OR icon - not both!
-button :: proc(ctx: ^Context, label: string, icon: Icon = .NONE, opt: Options = {.ALIGN_CENTER}) -> (res: Result_Set) {
+button :: proc(ctx: ^Context, label: string, icon: Icon = .NONE, readonly: bool = false, opt: Options = {.ALIGN_CENTER}) -> (res: Result_Set) {
+	opt := opt
 	id := len(label) > 0 ? get_id(ctx, label) : get_id(ctx, uintptr(icon))
 	r := layout_next(ctx)
+	color_index: Color_Type = .READONLY
+	if readonly {opt += {.READONLY}}
+
 	update_control(ctx, id, r, opt)
-	/* handle click */
-	if ctx.mouse_pressed_bits == {.LEFT} && ctx.focus_id == id {
-		res += {.SUBMIT}
+	if !readonly {
+		color_index = .TEXT
+		/* handle click */
+		if ctx.mouse_pressed_bits == {.LEFT} && ctx.focus_id == id {
+			res += {.SUBMIT}
+		}
 	}
 	/* draw */
 	draw_control_frame(ctx, id, r, .BUTTON, opt)
 	if len(label) > 0 {
-		draw_control_text(ctx, label, r, .TEXT, opt)
+		draw_control_text(ctx, label, r, color_index, opt)
 	}
 	if icon != .NONE {
-		draw_icon(ctx, icon, r, ctx.style.colors[.TEXT])
+		draw_icon(ctx, icon, r, ctx.style.colors[color_index])
 	}
 	return
 }
 
-checkbox :: proc(ctx: ^Context, label: string, state: ^bool) -> (res: Result_Set) {
+checkbox :: proc(ctx: ^Context, label: string, state: ^bool, readonly: bool = false) -> (res: Result_Set) {
+	opt := Options{}
 	id := get_id(ctx, uintptr(state))
 	r := layout_next(ctx)
 	box := Rect{r.x, r.y, r.h, r.h}
-	update_control(ctx, id, r, {})
+	color_index: Color_Type = .READONLY
+	if readonly {opt += {.READONLY}}
 	/* handle click */
-	if .LEFT in ctx.mouse_released_bits && ctx.hover_id == id {
-		res += {.CHANGE}
-		state^ = !state^
+	update_control(ctx, id, r, opt)
+	if !readonly {
+		color_index = .TEXT
+		if .LEFT in ctx.mouse_released_bits && ctx.hover_id == id {
+			res += {.CHANGE}
+			state^ = !state^
+		}
 	}
 	/* draw */
-	draw_control_frame(ctx, id, box, .BASE, {})
+	draw_control_frame(ctx, id, box, .BASE, opt)
 	if state^ {
-		draw_icon(ctx, .CHECK, box, ctx.style.colors[.TEXT])
+		draw_icon(ctx, .CHECK, box, ctx.style.colors[color_index])
 	}
 	r = Rect{r.x + box.w, r.y, r.w - box.w, r.h}
-	draw_control_text(ctx, label, r, .TEXT)
+	draw_control_text(ctx, label, r, color_index)
 	return
 }
 

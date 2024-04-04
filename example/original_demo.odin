@@ -1,8 +1,8 @@
 package miniui_example
 
 import mu ".."
-import SDL "vendor:sdl2"
 import "core:fmt"
+import SDL "vendor:sdl2"
 
 // The microui builtin example window from GB
 
@@ -79,7 +79,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 			if .SUBMIT in mu.button(ctx, "Button 1") {write_log("Pressed button 1")}
 			if .SUBMIT in mu.button(ctx, "Button 2") {write_log("Pressed button 2")}
 			mu.label(ctx, "Test buttons 2:")
-			if .SUBMIT in mu.button(ctx, "Button 3") {write_log("Pressed button 3")}
+			if .SUBMIT in mu.button(ctx, "Button 3", readonly=true) {write_log("Pressed button 3")}
 			if .SUBMIT in mu.button(ctx, "Button 4") {write_log("Pressed button 4")}
 		}
 
@@ -107,7 +107,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 				@(static)
 				checks := [3]bool{true, false, true}
 				mu.checkbox(ctx, "Checkbox 1", &checks[0])
-				mu.checkbox(ctx, "Checkbox 2", &checks[1])
+				mu.checkbox(ctx, "Checkbox 2", &checks[1], readonly = true)
 				mu.checkbox(ctx, "Checkbox 3", &checks[2])
 
 			}
@@ -190,6 +190,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 			.BASE_FOCUS   = "base focus",
 			.SCROLL_BASE  = "scroll base",
 			.SCROLL_THUMB = "scroll thumb",
+			.READONLY     = "read-only",
 		}
 
 		sw := i32(f32(mu.get_current_container(ctx).body.w) * 0.14)
@@ -205,4 +206,3 @@ all_windows :: proc(ctx: ^mu.Context) {
 	}
 
 }
-
