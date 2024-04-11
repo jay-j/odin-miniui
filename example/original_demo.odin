@@ -160,7 +160,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 		buf_len: int
 		submitted := false
 		mu.layout_row(ctx, {-70, -1})
-		if .SUBMIT in mu.textbox(ctx, buf[:], &buf_len) {
+		if .SUBMIT in mu.textbox(ctx, buf[:], &buf_len, readonly=false) {
 			mu.set_focus(ctx, ctx.last_id)
 			submitted = true
 		}

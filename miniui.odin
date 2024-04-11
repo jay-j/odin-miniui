@@ -1115,29 +1115,31 @@ checkbox :: proc(ctx: ^Context, label: string, state: ^bool, readonly: bool = fa
 textbox_raw :: proc(ctx: ^Context, textbuf: []u8, textlen: ^int, id: Id, r: Rect, opt := Options{}) -> (res: Result_Set) {
 	update_control(ctx, id, r, opt | {.HOLD_FOCUS})
 
-	if ctx.focus_id == id {
-		/* handle text input */
-		n := min(len(textbuf) - textlen^, strings.builder_len(ctx.text_input))
-		if n > 0 {
-			copy(textbuf[textlen^:], strings.to_string(ctx.text_input)[:n])
-			textlen^ += n
-			res += {.CHANGE}
-		}
-		/* handle backspace */
-		if .BACKSPACE in ctx.key_pressed_bits && textlen^ > 0 {
-			/* skip utf-8 continuation bytes */
-			for textlen^ > 0 {
-				textlen^ -= 1
-				if textbuf[textlen^] & 0xc0 != 0x80 {
-					break
-				}
+	if .READONLY not_in opt {
+		if ctx.focus_id == id {
+			/* handle text input */
+			n := min(len(textbuf) - textlen^, strings.builder_len(ctx.text_input))
+			if n > 0 {
+				copy(textbuf[textlen^:], strings.to_string(ctx.text_input)[:n])
+				textlen^ += n
+				res += {.CHANGE}
 			}
-			res += {.CHANGE}
-		}
-		/* handle return */
-		if .RETURN in ctx.key_pressed_bits {
-			set_focus(ctx, 0)
-			res += {.SUBMIT}
+			/* handle backspace */
+			if .BACKSPACE in ctx.key_pressed_bits && textlen^ > 0 {
+				/* skip utf-8 continuation bytes */
+				for textlen^ > 0 {
+					textlen^ -= 1
+					if textbuf[textlen^] & 0xc0 != 0x80 {
+						break
+					}
+				}
+				res += {.CHANGE}
+			}
+			/* handle return */
+			if .RETURN in ctx.key_pressed_bits {
+				set_focus(ctx, 0)
+				res += {.SUBMIT}
+			}
 		}
 	}
 
@@ -1188,7 +1190,9 @@ number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string:
 	return false
 }
 
-textbox :: proc(ctx: ^Context, buf: []u8, textlen: ^int, opt := Options{}) -> Result_Set {
+textbox :: proc(ctx: ^Context, buf: []u8, textlen: ^int, readonly : bool = false, opt := Options{}) -> Result_Set {
+	opt := opt
+	if readonly { opt += {.READONLY}}
 	id := get_id(ctx, uintptr(&buf[0]))
 	r := layout_next(ctx)
 	return textbox_raw(ctx, buf, textlen, id, r, opt)
