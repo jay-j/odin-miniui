@@ -1,9 +1,9 @@
 {
 	"$schema": "https://raw.githubusercontent.com/DanielGavin/ols/master/misc/ols.schema.json",
 	"collections": [
-		{ "name": "base", "path": "/home/jjasper/Programs/Odin/base" },
-		{ "name": "core", "path": "/home/jjasper/Programs/Odin/core" },
-		{ "name": "vendor", "path": "/home/jjasper/Programs/Odin/vendor" },
+		{ "name": "base", "path": "/media/data/Programs/Odin/base" },
+		{ "name": "core", "path": "/media/data/Programs/Odin/core" },
+		{ "name": "vendor", "path": "/media/data/Programs/Odin/vendor" },
 	],
 	"enable_semantic_tokens": true,
 	"enable_document_symbols": true,

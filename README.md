@@ -15,7 +15,7 @@ A small, portable, immediate-mode UI library written in Odin. (Extended from the
 * Simple layout system
 
 ## Goals / Added Features
-[ ] Image elements
+[X] Image elements
 [ ] Read-only mode; grey-out locked controls
 [ ] Support for more specific numeric inputs (integer, not float only)
 [ ] Window docking & tabs

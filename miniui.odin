@@ -82,6 +82,9 @@ Result :: enum u32 {
 	ACTIVE,
 	SUBMIT,
 	CHANGE,
+	LEFT,
+	RIGHT,
+	MIDDLE,
 }
 Result_Set :: bit_set[Result;u32]
 
@@ -288,7 +291,7 @@ default_style := Style {
 	footer_height = 20,
 	scrollbar_size = 12,
 	thumb_size = 8,
-	colors =  {
+	colors = {
 		.TEXT = {230, 230, 230, 255},
 		.BORDER = {25, 25, 25, 255},
 		.WINDOW_BG = {50, 50, 50, 255},
@@ -1190,9 +1193,9 @@ number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string:
 	return false
 }
 
-textbox :: proc(ctx: ^Context, buf: []u8, textlen: ^int, readonly : bool = false, opt := Options{}) -> Result_Set {
+textbox :: proc(ctx: ^Context, buf: []u8, textlen: ^int, readonly: bool = false, opt := Options{}) -> Result_Set {
 	opt := opt
-	if readonly { opt += {.READONLY}}
+	if readonly {opt += {.READONLY}}
 	id := get_id(ctx, uintptr(&buf[0]))
 	r := layout_next(ctx)
 	return textbox_raw(ctx, buf, textlen, id, r, opt)
