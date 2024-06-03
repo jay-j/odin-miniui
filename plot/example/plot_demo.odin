@@ -2,11 +2,8 @@ package plot_demo
 
 import plt ".."
 import mu "../.."
-import "core:fmt"
 import "core:log"
 import "core:math"
-import glm "core:math/linalg/glsl"
-import "core:strings"
 import "core:time"
 import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
@@ -60,9 +57,9 @@ main :: proc() {
 
 	plot := plt.plot_init(1920, 1080)
 
-	sine := plt.dataset_add(&plot, x[:], y[:])
+	sine := plt.dataset_add(&plot, x[:], y[:], auto_range = true)
 
-	spiral := plt.dataset_add(&plot, x2[:], y2[:])
+	spiral := plt.dataset_add(&plot, x2[:], y2[:], auto_range = true)
 	spiral.color = {0.1, 0.8, 0.8, 1.0}
 
 
@@ -88,6 +85,10 @@ main :: proc() {
 				#partial switch event.key.keysym.scancode {
 				case .ESCAPE:
 					break main_loop
+				case .NUM1:
+					plot.scale_mode = .Stretched
+				case .NUM2:
+					plot.scale_mode = .Isotropic
 				}
 			}
 

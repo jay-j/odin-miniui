@@ -1,6 +1,7 @@
 package plot
 import "core:log"
 import glm "core:math/linalg/glsl"
+import "core:slice"
 import gl "vendor:OpenGL"
 
 // Get a framebuffer provided by/for something
@@ -12,6 +13,12 @@ PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION :: glm.vec4{0.5, 0.7, 0.5, 1.0}
 
 // TODO: How to add text labels?
+
+Plot_Scale_Mode :: enum {
+	Stretched = 0,
+	Isotropic,
+}
+
 
 // PERFORMANCE: consider a separate PlotRenderer struct so shader program setup isn't duplicate work
 PlotRenderer :: struct {
@@ -33,6 +40,7 @@ Plot :: struct {
 	// the current display portion
 	range_x:                [2]f32,
 	range_y:                [2]f32,
+	scale_mode:             Plot_Scale_Mode,
 
 	// Pointers (via slice) to the actual data being plotted
 	data:                   [dynamic]Dataset,
@@ -124,7 +132,7 @@ plot_init :: proc(
 }
 
 
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1.0}) -> (dset: ^Dataset) {
+dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1.0}, auto_range := false) -> (dset: ^Dataset) {
 	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 	// TODO: how does this work if ther isn't data available yet? 
 	append(&plot.data, Dataset{x = x[:], y = y[:]})
@@ -135,6 +143,25 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1
 	dset.color = color
 
 	dataset_update(dset, x, y)
+
+	if auto_range {
+		range_x: [2]f32 = {slice.min(x[:]), slice.max(x[:])}
+		if range_x[0] < plot.range_x[0] {
+			plot.range_x[0] = range_x[0]
+		}
+		if range_x[1] > plot.range_x[1] {
+			plot.range_x[1] = range_x[1]
+		}
+
+		range_y: [2]f32 = {slice.min(y[:]), slice.max(y[:])}
+		if range_y[0] < plot.range_y[0] {
+			plot.range_y[0] = range_y[0]
+		}
+		if range_y[1] > plot.range_y[1] {
+			plot.range_y[1] = range_y[1]
+		}
+	}
+
 	return dset
 }
 
@@ -165,18 +192,55 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 
+	// Expand the grid to the view rather than restricting it to the range of data.
+	grid_bounds_x: [2]f32
+	grid_bounds_y: [2]f32
+
 	// calculate and set transform uniform
 	{
-		// TODO redo this to be nicer for just 2D stuff and changing
-		ar := f32(width) / f32(height)
-		proj := glm.mat4Ortho3d(-ar, ar, -1, 1, 0, 1)
-		view := glm.mat4LookAt({0.0, 0.0, -1.0}, {0.0, 0.0, 0.0}, {0.0, 1.0, 0.0})
+		proj: glm.mat4x4
+		if plot.scale_mode == .Stretched {
+			proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+			copy(grid_bounds_x[:], plot.range_x[:])
+			copy(grid_bounds_y[:], plot.range_y[:])
+
+		} else if plot.scale_mode == .Isotropic {
+			ar_pixels := f32(width) / f32(height) // aspect ratio of the available pixels
+			ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
+
+			// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
+			if ar_data >= ar_pixels {
+				ratio := (plot.range_x[1] - plot.range_x[0]) / f32(width) // unit per pixel
+				half_height := 0.5 * f32(height) * ratio
+				average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
+
+				copy(grid_bounds_x[:], plot.range_x[:])
+				grid_bounds_y = {average_height - half_height, average_height + half_height}
+
+				proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
+
+
+			} else {
+				// if data is taller than the display, use the data to set the height and there is extra empty width
+				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(height)
+				half_width := 0.5 * f32(width) * ratio
+				average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
+
+				copy(grid_bounds_y[:], plot.range_y[:])
+				grid_bounds_x = {average_width - half_width, average_width + half_width}
+
+				proj = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+			}
+		}
+
 		flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down 
-		u_transform: glm.mat4x4 = flip_view * proj * view
+		u_transform: glm.mat4x4 = flip_view * proj
 		gl.UniformMatrix4fv(rend.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
 	}
 
 	gl.BindVertexArray(rend.vao)
+
+	// OpenGL camera space goes from z=0 to -1
 	dz: f32 = 1.0 / (3 + f32(len(plot.data)))
 	z: f32 = -2 * dz
 
@@ -207,8 +271,8 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 	// PERFORMANCE: only if the view has changed?
 	// TODO : so much better grid stuff, respond to scale add grid instead of just axis marks, etc.
 	dg: f32 = 0.0025 // scale by pixels
-	grid_x: []f32 = {-1, 1, -1, 1, dg, dg, -dg, -dg}
-	grid_y: []f32 = {dg, dg, -dg, -dg, -1, 1, -1, 1}
+	grid_x: []f32 = {grid_bounds_x[0], grid_bounds_x[1], grid_bounds_x[0], grid_bounds_x[1], dg, dg, -dg, -dg}
+	grid_y: []f32 = {dg, dg, -dg, -dg, grid_bounds_y[0], grid_bounds_y[1], grid_bounds_y[0], grid_bounds_y[1]}
 
 
 	// link the UI VBOs to this ARRAY_BUFFER
