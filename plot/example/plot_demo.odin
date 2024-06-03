@@ -67,10 +67,7 @@ main :: proc() {
 	// Init from miniui
 	gui := mu.init()
 
-
-	plot_renderer := plt.render_init()
-	fmt.printf("Render init: %v\n", gl.GetError())
-
+	// Generate some sample data for the demo
 	x := linspace(-1.5, 2, 1024)
 	y := make([]f32, len(x))
 	for i in 0 ..< len(x) {
@@ -80,33 +77,29 @@ main :: proc() {
 	x2 := make([]f32, len(th))
 	y2 := make([]f32, len(th))
 	for i in 0 ..< len(th) {
-		x2[i] = (th[i] / 50.0) * math.cos(th[i])
-		y2[i] = (th[i] / 50.0) * math.sin(th[i])
+		x2[i] = (th[i] / 50.0 + 0.04 * math.cos(10 * th[i])) * math.cos(th[i])
+		y2[i] = (th[i] / 50.0 + 0.04 * math.sin(10 * th[i])) * math.sin(th[i])
 	}
 
-	// TODO this is a really clunky UX right now
+	// Do the plotting
+	plot_renderer := plt.render_init()
+
 	plot := plt.plot_init(1920, 1080)
-	log.debug("Plot init: %v\n", gl.GetError())
-	append(&plot.data, plt.Dataset{x = x[:], y = y[:]})
-	plt.dataset_init(&plot.data[0])
-	log.debug("Dataset init: %v\n", gl.GetError())
-	plt.gpu_send_data(&plot.data[0], x[:], y[:])
-	log.debug("Dataset send: %v\n", gl.GetError())
 
-	append(&plot.data, plt.Dataset{x = x2[:], y = y2[:]})
-	plt.dataset_init(&plot.data[1])
-	plt.gpu_send_data(&plot.data[1], x2[:], y2[:])
-	plot.data[1].color = {0.1, 0.8, 0.8, 1.0}
+	sine := plt.dataset_add(&plot, x[:], y[:])
+
+	spiral := plt.dataset_add(&plot, x2[:], y2[:])
+	spiral.color = {0.1, 0.8, 0.8, 1.0}
 
 
-	// vp := viewport_init(1920, 1080) // TODO hardcoded. Maximum screen dimensions
+	// This bundles data 
 	plot_texture := mu.Texture {
 		texture_id = plot.framebuffer_rgb,
 		// TODO need these to be non insane and constant things! link between render calls and this!
-		width      = 1920,
-		height     = 1080,
-		inv_width  = 1.0 / 1920,
-		inv_height = 1.0 / 1080,
+		width      = plot.framebuffer_width_max,
+		height     = plot.framebuffer_height_max,
+		inv_width  = 1.0 / f32(plot.framebuffer_width_max),
+		inv_height = 1.0 / f32(plot.framebuffer_height_max),
 	}
 
 	fmt.printf("Errors before loop start: %v\n", gl.GetError())
@@ -126,16 +119,12 @@ main :: proc() {
 			}
 
 			mu.input_sdl_events(&gui.ctx, event)
-
 		}
 
-		gl.ClearColor(0.5, 0.7, 1.0, 0.0) // TODO what is the right value?
-		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 		{
 			mu.begin(&gui.ctx)
 			defer mu.end(&gui.ctx)
-
 
 			{
 				win: ^mu.Container
@@ -149,15 +138,9 @@ main :: proc() {
 
 					mu.layout_row(&gui.ctx, {-1}, -1)
 					vpw, vph = mu.image_raw(&gui.ctx, plot_texture)
-					// viewport_draw(&vp, vpw, vph)
 					plt.draw(plot_renderer, &plot, vpw, vph)
 
-					// debug
-					// bad perspective - data out of frame
-					// bad data transfer to GPU
-					// z coordinate is just bad
 				}
-
 			}
 		}
 
@@ -167,6 +150,8 @@ main :: proc() {
 			mu.draw_prepare(gui, window_width, window_height)
 		}
 
+		gl.ClearColor(0.5, 0.7, 1.0, 0.0) // TODO what is the right value?
+		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 		mu.draw(gui, context.temp_allocator)
 		SDL.GL_SwapWindow(app.window)
 

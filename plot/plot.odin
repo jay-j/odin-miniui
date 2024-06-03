@@ -15,9 +15,8 @@ PlotRenderer :: struct {
 	program:  u32,
 	uniforms: map[string]gl.Uniform_Info,
 	vao:      u32,
-	// vbo:      u32,
-	// ebo:      u32,
 }
+
 
 Plot :: struct {
 	framebuffer:            u32,
@@ -39,12 +38,13 @@ Dataset :: struct {
 	x:     []f32,
 	y:     []f32,
 	color: glm.vec4,
-	// gpu_index: i32,
 	vbo_x: u32,
 	vbo_y: u32,
 }
 
+
 render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
+	// STEP 1: Setup the shader to draw Plots. 
 	context.allocator = allocator
 
 	rend = new(PlotRenderer)
@@ -61,16 +61,18 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 		rend.uniforms = gl.get_uniforms_from_program(rend.program)
 
 		gl.GenVertexArrays(1, &rend.vao)
-		// gl.GenBuffers(1, &rend.vbo)
-		// gl.GenBuffers(1, &rend.ebo)
 	}
 
 	return rend
 }
 
-plot_init :: proc(width, height: i32) -> (plot: Plot) {
 
-	// width, height, v: viewport
+plot_init :: proc(width, height: i32) -> (plot: Plot) {
+	// STEP 2: Create a Plot
+	// width, height of maximum framebuffer dimensions
+	// Since this is calling GPU setup and allocations, it is recommended to do
+	// this once during setup; not every frame.
+
 	gl.CreateFramebuffers(1, &plot.framebuffer)
 	log.debugf("Created framebuffer: %v", gl.GetError())
 
@@ -96,38 +98,43 @@ plot_init :: proc(width, height: i32) -> (plot: Plot) {
 	gl.NamedFramebufferTexture(plot.framebuffer, gl.DEPTH_STENCIL_ATTACHMENT, plot.framebuffer_depth, 0)
 	log.debugf("Framebuffer depth: %v", gl.GetError())
 
-	// Setup the ui texture for displaying
-	// plot.texture = mu.Texture {
-	// 	texture_id = plot.framebuffer_texture,
-	// 	width      = width,
-	// 	inv_width  = 1.0 / f32(width),
-	// 	height     = height,
-	// 	inv_height = 1.0 / f32(height),
-	// }
 	return plot
-
 }
 
 
-dataset_init :: proc(dset: ^Dataset, color := glm.vec4{0.8, 0.0, 0.8, 1.0}) {
+dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1.0}) -> (dset: ^Dataset) {
+	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
+	// TODO: how does this work if ther isn't data available yet? 
+	append(&plot.data, Dataset{x = x[:], y = y[:]})
+	dset = &plot.data[len(plot.data) - 1]
+
 	gl.GenBuffers(1, &dset.vbo_x)
 	gl.GenBuffers(1, &dset.vbo_y)
 	dset.color = color
-}
 
+	dataset_update(dset, x, y)
+	return dset
+}
 
 // TODO set of procedures to call to change plot pan & zoom
 // have the user implement how these get called
 
-gpu_send_data :: proc(dset: ^Dataset, x, y: []f32) {
+dataset_update :: proc(dset: ^Dataset, x, y: []f32) {
+	// Update pointers and send new data to the GPU
 	assert(len(x) == len(y))
+	dset.x = x
+	dset.y = y
 	gl.BindBuffer(gl.ARRAY_BUFFER, dset.vbo_x)
 	gl.BufferData(gl.ARRAY_BUFFER, len(x) * size_of(x[0]), &x[0], gl.STATIC_DRAW)
 	gl.BindBuffer(gl.ARRAY_BUFFER, dset.vbo_y)
 	gl.BufferData(gl.ARRAY_BUFFER, len(y) * size_of(y[0]), &y[0], gl.STATIC_DRAW)
 }
 
+
 draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
+	// STEP 4: Render the Plot to its framebuffer
+	// Displaying the framebuffer is left to the user
+
 	gl.UseProgram(rend.program)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
@@ -206,11 +213,6 @@ shader_line_fragment: string = `
 	    o_color = v_color;
     }
 `
-
-// make a GL point shader?
-// glDrawArrays from  a different starting point?
-// and gl.MultiDrawArray will do  this
-
 
 // https://en.wikibooks.org/wiki/OpenGL_Programming/Scientific_OpenGL_Tutorial_02
 // Make some 1-D VBOs
