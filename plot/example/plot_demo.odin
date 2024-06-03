@@ -1,31 +1,5 @@
 package plot_demo
 
-// conops
-// (init OpenGL)
-// init_plot_renderer()
-// create_plot() framebuffers and such
-// loop {
-//    calculate whatever data
-//    if data changes {
-//        for each dataset being plotted,
-//        send new data to GPU
-//    	}
-//    if data changed or view changes {
-
-//     call the draw to framebuffer proc
-//     }
-//    copy framebuffer to target
-//        
-//     
-// }
-// }
-
-
-// optim - change the render framebuffer size
-// optim - don't render plots that aren't visible? let that be determined by imgui
-
-// Example!
-
 import plt ".."
 import mu "../.."
 import "core:fmt"
@@ -92,17 +66,16 @@ main :: proc() {
 	spiral.color = {0.1, 0.8, 0.8, 1.0}
 
 
-	// This bundles data 
+	// Bundle the data used by miniui to display the framebuffer in an image element.
 	plot_texture := mu.Texture {
 		texture_id = plot.framebuffer_rgb,
-		// TODO need these to be non insane and constant things! link between render calls and this!
 		width      = plot.framebuffer_width_max,
 		height     = plot.framebuffer_height_max,
 		inv_width  = 1.0 / f32(plot.framebuffer_width_max),
 		inv_height = 1.0 / f32(plot.framebuffer_height_max),
 	}
 
-	fmt.printf("Errors before loop start: %v\n", gl.GetError())
+	log.debugf("Errors before loop start: %v\n", gl.GetError())
 
 	main_loop: for {
 		app_framerate_control()
@@ -121,26 +94,32 @@ main :: proc() {
 			mu.input_sdl_events(&gui.ctx, event)
 		}
 
+		// Demo updating data on one of the plots. Choosing here to compute this even if the plot is not shown.
+		for i in 0 ..< len(th) {
+			x2[i] = (th[i] / 50.0 + 0.04 * math.cos(10 * th[i] + 2 * app.t)) * math.cos(th[i])
+			y2[i] = (th[i] / 50.0 + 0.04 * math.sin(10 * th[i] + 1.57 * app.t)) * math.sin(th[i])
+		}
 
+		// UI Definition, including drawing the plot. Note that this immediate mode implementation
+		// results in the plot-drawing GPU work to only be done if the plot is visible.
 		{
 			mu.begin(&gui.ctx)
 			defer mu.end(&gui.ctx)
 
-			{
-				win: ^mu.Container
-				vpw, vph: i32
+			if mu.window(&gui.ctx, "Plot demo", {5, 5, 800, 800}) {
+				mu.layout_row(&gui.ctx, {-1}, 0)
+				mu.label(&gui.ctx, "Here is a plot!")
 
-				// A primary viewport display! Queueing the image draw command first allows the
-				// framebuffer to be rendered at the exact required output resolution.
-				if mu.window(&gui.ctx, "Framebuffer demo", {5, 5, 800, 800}) {
-					mu.layout_row(&gui.ctx, {-1}, 0)
-					mu.label(&gui.ctx, "Here is a plot!")
+				// Delaying the plot update to here since if the plot isn't visible,
+				// the data doesn't need to be sent to the GPU.
+				plt.dataset_update(spiral, x2[:], y2[:])
 
-					mu.layout_row(&gui.ctx, {-1}, -1)
-					vpw, vph = mu.image_raw(&gui.ctx, plot_texture)
-					plt.draw(plot_renderer, &plot, vpw, vph)
-
-				}
+				// Queue the miniui command first so that the desired framebuffer size
+				// is exactly known. Then the framebuffer is updated befor the command
+				// queue is executed in mu.draw().
+				mu.layout_row(&gui.ctx, {-1}, -1)
+				vpw, vph := mu.image_raw(&gui.ctx, plot_texture)
+				plt.draw(plot_renderer, &plot, vpw, vph)
 			}
 		}
 
@@ -185,14 +164,10 @@ gfx_window_setup :: proc(window_width, window_height: i32) {
 	// Framebuffers don't work on OpenGL 3.3
 	gl.load_up_to(4, 5, SDL.gl_set_proc_address)
 
-	// Disabling the OpenGL Depth Test greatly enables seemingly good alpha over behavior
-	// gl.Enable(gl.DEPTH_TEST)
 	gl.Enable(gl.CULL_FACE)
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Enable(gl.ALPHA_TEST)
-
-	// TODO consider rendering all opaque tinted things before transparent tinted things
 }
 
 

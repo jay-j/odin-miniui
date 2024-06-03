@@ -8,6 +8,9 @@ import gl "vendor:OpenGL"
 // BACKGROUND COLOR
 // AXIS & LABEL COLOR
 
+PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
+PLOT_DEFAULT_COLOR_ANNOTATION :: glm.vec4{0.5, 0.7, 0.5, 1.0}
+
 // TODO: How to add text labels?
 
 // PERFORMANCE: consider a separate PlotRenderer struct so shader program setup isn't duplicate work
@@ -22,15 +25,21 @@ Plot :: struct {
 	framebuffer:            u32,
 	framebuffer_rgb:        u32,
 	framebuffer_depth:      u32,
-	// limits
 	framebuffer_width_max:  i32,
 	framebuffer_height_max: i32,
+	color_background:       glm.vec4,
+	color_annotation:       glm.vec4,
+
 	// the current display portion
 	range_x:                [2]f32,
 	range_y:                [2]f32,
 
 	// Pointers (via slice) to the actual data being plotted
 	data:                   [dynamic]Dataset,
+
+	// Using the same shader to draw grid elements, so we need VBOs
+	vbo_grid_x:             u32,
+	vbo_grid_y:             u32,
 }
 
 
@@ -67,11 +76,20 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 }
 
 
-plot_init :: proc(width, height: i32) -> (plot: Plot) {
+plot_init :: proc(
+	width, height: i32,
+	color_background := PLOT_DEFAULT_COLOR_BACKGROUND,
+	color_annotation := PLOT_DEFAULT_COLOR_ANNOTATION,
+) -> (
+	plot: Plot,
+) {
 	// STEP 2: Create a Plot
 	// width, height of maximum framebuffer dimensions
 	// Since this is calling GPU setup and allocations, it is recommended to do
 	// this once during setup; not every frame.
+
+	plot.color_background = color_background
+	plot.color_annotation = color_annotation
 
 	gl.CreateFramebuffers(1, &plot.framebuffer)
 	log.debugf("Created framebuffer: %v", gl.GetError())
@@ -97,6 +115,10 @@ plot_init :: proc(width, height: i32) -> (plot: Plot) {
 	gl.TextureStorage2D(plot.framebuffer_depth, 1, gl.DEPTH24_STENCIL8, plot.framebuffer_width_max, plot.framebuffer_height_max)
 	gl.NamedFramebufferTexture(plot.framebuffer, gl.DEPTH_STENCIL_ATTACHMENT, plot.framebuffer_depth, 0)
 	log.debugf("Framebuffer depth: %v", gl.GetError())
+
+	// Creat the vertex buffers for the grid/ui stuff
+	gl.GenBuffers(1, &plot.vbo_grid_x)
+	gl.GenBuffers(1, &plot.vbo_grid_y)
 
 	return plot
 }
@@ -139,7 +161,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
 	gl.Viewport(0, 0, width, height)
-	gl.ClearColor(0, 0, 0, 1)
+	gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 
@@ -156,7 +178,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 
 	gl.BindVertexArray(rend.vao)
 	dz: f32 = 1.0 / (3 + f32(len(plot.data)))
-	z: f32 = -dz
+	z: f32 = -2 * dz
 
 	for &dataset in plot.data {
 		// set color uniform
@@ -177,13 +199,31 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
 	}
 
-	// TODO draw grid elements
-	// // set color uniform for grid/UI
-	// grid_color := glm.vec4{0.5, 0.5, 0.5, 1.0}
-	// gl.Uniform4fv(rend.uniforms["color"].location, 1, &grid_color)
+	// set color uniform for grid/UI
+	gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation[0])
+	gl.Uniform1f(rend.uniforms["z"].location, -dz)
+
+	// Fill the UI VBOs with whatever data they need
+	// PERFORMANCE: only if the view has changed?
+	// TODO : so much better grid stuff, respond to scale add grid instead of just axis marks, etc.
+	dg: f32 = 0.0025 // scale by pixels
+	grid_x: []f32 = {-1, 1, -1, 1, dg, dg, -dg, -dg}
+	grid_y: []f32 = {dg, dg, -dg, -dg, -1, 1, -1, 1}
+
+
+	// link the UI VBOs to this ARRAY_BUFFER
+	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
+	gl.BufferData(gl.ARRAY_BUFFER, len(grid_x) * size_of(grid_x[0]), &grid_x[0], gl.STATIC_DRAW)
+	gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+	gl.EnableVertexAttribArray(0)
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_y)
+	gl.BufferData(gl.ARRAY_BUFFER, len(grid_y) * size_of(grid_y[0]), &grid_y[0], gl.STATIC_DRAW)
+	gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+	gl.EnableVertexAttribArray(1)
 
 	// // use non strip mode for the UI elements
-	// gl.DrawArrays(gl.LINE)
+	gl.DrawArrays(gl.LINES, 0, cast(i32)len(grid_x))
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
