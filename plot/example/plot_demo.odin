@@ -2,6 +2,7 @@ package plot_demo
 
 import plt ".."
 import mu "../.."
+import "core:fmt"
 import "core:log"
 import "core:math"
 import "core:time"
@@ -15,6 +16,7 @@ App :: struct {
 	time_start:              time.Tick,
 	time_frame_start:        time.Tick,
 	time_frame_delta_target: time.Duration,
+	time_work:               f32,
 }
 
 app := App{}
@@ -44,7 +46,7 @@ main :: proc() {
 	for i in 0 ..< len(x) {
 		y[i] = 0.9 * math.sin(4 * x[i])
 	}
-	th := linspace(0.1, 40, 1024)
+	th := linspace(0.1, 40, 1e4)
 	x2 := make([]f32, len(th))
 	y2 := make([]f32, len(th))
 	for i in 0 ..< len(th) {
@@ -109,7 +111,7 @@ main :: proc() {
 
 			if mu.window(&gui.ctx, "Plot demo", {5, 5, 800, 800}) {
 				mu.layout_row(&gui.ctx, {-1}, 0)
-				mu.label(&gui.ctx, "Here is a plot!")
+				mu.label(&gui.ctx, fmt.tprintf("Frame work time: %.1f ms", app.time_work))
 
 				// Delaying the plot update to here since if the plot isn't visible,
 				// the data doesn't need to be sent to the GPU.
@@ -194,4 +196,5 @@ app_framerate_control :: proc() {
 
 	app.time_frame_start = time.tick_now()
 	app.t = cast(f32)time.duration_seconds(time.tick_diff(app.time_frame_start, app.time_start))
+	app.time_work = cast(f32)time.duration_milliseconds(elapsed)
 }

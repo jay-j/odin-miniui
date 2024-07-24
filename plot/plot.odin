@@ -1,13 +1,13 @@
 package plot
+import "core:fmt"
 import "core:log"
+import "core:math"
 import glm "core:math/linalg/glsl"
 import "core:slice"
+import "core:testing"
 import gl "vendor:OpenGL"
 
 // Get a framebuffer provided by/for something
-
-// BACKGROUND COLOR
-// AXIS & LABEL COLOR
 
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION :: glm.vec4{0.5, 0.7, 0.5, 1.0}
@@ -17,6 +17,7 @@ PLOT_DEFAULT_COLOR_ANNOTATION :: glm.vec4{0.5, 0.7, 0.5, 1.0}
 Plot_Scale_Mode :: enum {
 	Stretched = 0,
 	Isotropic,
+	Manual,
 }
 
 
@@ -36,6 +37,7 @@ Plot :: struct {
 	framebuffer_height_max: i32,
 	color_background:       glm.vec4,
 	color_annotation:       glm.vec4,
+	color_graph_default:    glm.vec4,
 
 	// the current display portion
 	range_x:                [2]f32,
@@ -132,7 +134,7 @@ plot_init :: proc(
 }
 
 
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1.0}, auto_range := false) -> (dset: ^Dataset) {
+dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}, auto_range := false) -> (dset: ^Dataset) {
 	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 	// TODO: how does this work if ther isn't data available yet? 
 	append(&plot.data, Dataset{x = x[:], y = y[:]})
@@ -140,7 +142,14 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.8, 0.0, 0.8, 1
 
 	gl.GenBuffers(1, &dset.vbo_x)
 	gl.GenBuffers(1, &dset.vbo_y)
-	dset.color = color
+
+	// If no color is given use a default changing value
+	if color.a == -1 {
+		dset.color = plot.color_graph_default
+		// TODO increment the default color in HSV space
+	} else {
+		dset.color = color
+	}
 
 	dataset_update(dset, x, y)
 
@@ -321,3 +330,76 @@ shader_line_fragment: string = `
 // https://en.wikibooks.org/wiki/OpenGL_Programming/Scientific_OpenGL_Tutorial_02
 // Make some 1-D VBOs
 // https://stackoverflow.com/questions/64476062/multiple-vbos-in-one-vao?rq=3
+
+rgb_to_hsv :: proc(rgb: glm.vec4) -> (hsv: glm.vec4) {
+	// Floating point values; 0-1 not 0-255
+	Cmax := max(rgb.r, rgb.g, rgb.b)
+	Cmin := min(rgb.r, rgb.g, rgb.b)
+	delta := Cmax - Cmin
+
+	// Hue (0-1.0)
+	if Cmax == rgb.r {
+		hsv[0] = f32(60 * (int((rgb.g - rgb.b) / delta) % 6))
+	} else if Cmax == rgb.g {
+		hsv[0] = 60 * ((rgb.b - rgb.r) / delta + 2)
+	} else {
+		hsv[0] = 60 * ((rgb.r - rgb.g) / delta + 4)
+	}
+	hsv[0] /= 360.0
+
+	// Saturation (0-1)
+	if Cmax != 0 {
+		hsv[1] = delta / Cmax
+	}
+
+	hsv[2] = Cmax // Value (0-1)
+	hsv[3] = rgb[3] // Alpha (0-1)
+	return hsv
+}
+
+@(test)
+test_colors1 :: proc(t: ^testing.T) {
+	rgb := glm.vec4{0.1, 0.9, 0.2, 1.0}
+	hsv := rgb_to_hsv(rgb)
+	fmt.printf("hsv: %v\n", hsv)
+	testing.expect(t, abs(hsv[0] - 0.354167) < 0.001)
+	testing.expect(t, abs(hsv[1] - 0.888889) < 0.001)
+	testing.expect(t, abs(hsv[2] - 0.9) < 0.001)
+
+	rgb2 := hsv_to_rgb(hsv)
+	fmt.printf("rgb original  : %v\n", rgb)
+	fmt.printf("rgb round trip: %v\n", rgb2)
+	testing.expect(t, abs(rgb2[0] - rgb[0]) < 0.001)
+	testing.expect(t, abs(rgb2[1] - rgb[1]) < 0.001)
+	testing.expect(t, abs(rgb2[2] - rgb[2]) < 0.001)
+}
+
+hsv_to_rgb :: proc(hsv: glm.vec4) -> (rgb: glm.vec4) {
+	// TODO this is currently broken SAD BUG FIX 
+	C := hsv[2] * hsv[1]
+	h360 := int(hsv[0] * 360)
+	X: f32 = C * f32(1 - abs(((h360 / 60) % 2) - 1))
+	m: f32 = hsv[2] - C
+	fmt.printf("h360=%v        m=%v\n", h360, m)
+	switch v := math.floor(f32(h360 / 60)); v {
+	case 0:
+		rgb = {C, X, 0, 0}
+	case 1:
+		rgb = {X, C, 0, 0}
+	case 2:
+		fmt.printf("case 2\n")
+		rgb = {0, C, X, 0} // this case.. X is wrong
+	case 3:
+		rgb = {0, X, C, 0}
+	case 4:
+		rgb = {X, 0, C, 0}
+	case 5:
+		rgb = {C, 0, X, 0}
+	case:
+		panic("Some failure in HSV conversion")
+	}
+	rgb += m
+
+	rgb[3] = hsv[3] // Alpha (0-1)
+	return rgb
+}
