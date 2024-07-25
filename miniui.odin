@@ -702,6 +702,24 @@ input_sdl_events :: proc(ctx: ^Context, event: SDL.Event) {
 				fn(ctx, .RETURN)
 			case .BACKSPACE:
 				fn(ctx, .BACKSPACE)
+			case .DELETE:
+				fn(ctx, .DELETE)
+			case .LEFT:
+				fn(ctx, .LEFT)
+			case .RIGHT:
+				fn(ctx, .RIGHT)
+			case .HOME:
+				fn(ctx, .HOME)
+			case .END:
+				fn(ctx, .END)
+			case .A:
+				fn(ctx, .A)
+			case .X:
+				fn(ctx, .X)
+			case .C:
+				fn(ctx, .C)
+			case .V:
+				fn(ctx, .V)
 			}
 		}
 	}
