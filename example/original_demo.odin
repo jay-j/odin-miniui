@@ -79,7 +79,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 			if .SUBMIT in mu.button(ctx, "Button 1") {write_log("Pressed button 1")}
 			if .SUBMIT in mu.button(ctx, "Button 2") {write_log("Pressed button 2")}
 			mu.label(ctx, "Test buttons 2:")
-			if .SUBMIT in mu.button(ctx, "Button 3", readonly=true) {write_log("Pressed button 3")}
+			if .SUBMIT in mu.button(ctx, "Button 3", readonly = true) {write_log("Pressed button 3")}
 			if .SUBMIT in mu.button(ctx, "Button 4") {write_log("Pressed button 4")}
 		}
 
@@ -160,7 +160,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 		buf_len: int
 		submitted := false
 		mu.layout_row(ctx, {-70, -1})
-		if .SUBMIT in mu.textbox(ctx, buf[:], &buf_len, readonly=false) {
+		if .SUBMIT in mu.textbox(ctx, buf[:], &buf_len, readonly = false) {
 			mu.set_focus(ctx, ctx.last_id)
 			submitted = true
 		}
@@ -177,6 +177,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 		@(static)
 		colors := [mu.Color_Type]string {
 			.TEXT         = "text",
+			.SELECTION_BG = "text selection",
 			.BORDER       = "border",
 			.WINDOW_BG    = "window bg",
 			.TITLE_BG     = "title bg",
