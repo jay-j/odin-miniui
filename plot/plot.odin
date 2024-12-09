@@ -189,7 +189,7 @@ dataset_update :: proc(dset: ^Dataset, x, y: []f32) {
 }
 
 
-draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
+draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = true) {
 	// STEP 4: Render the Plot to its framebuffer
 	// Displaying the framebuffer is left to the user
 
@@ -272,31 +272,33 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32) {
 		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
 	}
 
-	// set color uniform for grid/UI
-	gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation[0])
-	gl.Uniform1f(rend.uniforms["z"].location, -dz)
+	if grid {
+		// set color uniform for grid/UI
+		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation[0])
+		gl.Uniform1f(rend.uniforms["z"].location, -dz)
 
-	// Fill the UI VBOs with whatever data they need
-	// PERFORMANCE: only if the view has changed?
-	// TODO : so much better grid stuff, respond to scale add grid instead of just axis marks, etc.
-	dg: f32 = 0.0025 // scale by pixels
-	grid_x: []f32 = {grid_bounds_x[0], grid_bounds_x[1], grid_bounds_x[0], grid_bounds_x[1], dg, dg, -dg, -dg}
-	grid_y: []f32 = {dg, dg, -dg, -dg, grid_bounds_y[0], grid_bounds_y[1], grid_bounds_y[0], grid_bounds_y[1]}
+		// Fill the UI VBOs with whatever data they need
+		// PERFORMANCE: only if the view has changed?
+		// TODO : so much better grid stuff, respond to scale add grid instead of just axis marks, etc.
+		dg: f32 = 0.0025 // scale by pixels
+		grid_x: []f32 = {grid_bounds_x[0], grid_bounds_x[1], grid_bounds_x[0], grid_bounds_x[1], dg, dg, -dg, -dg}
+		grid_y: []f32 = {dg, dg, -dg, -dg, grid_bounds_y[0], grid_bounds_y[1], grid_bounds_y[0], grid_bounds_y[1]}
 
 
-	// link the UI VBOs to this ARRAY_BUFFER
-	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
-	gl.BufferData(gl.ARRAY_BUFFER, len(grid_x) * size_of(grid_x[0]), &grid_x[0], gl.STATIC_DRAW)
-	gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
-	gl.EnableVertexAttribArray(0)
+		// link the UI VBOs to this ARRAY_BUFFER
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
+		gl.BufferData(gl.ARRAY_BUFFER, len(grid_x) * size_of(grid_x[0]), &grid_x[0], gl.STATIC_DRAW)
+		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(0)
 
-	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_y)
-	gl.BufferData(gl.ARRAY_BUFFER, len(grid_y) * size_of(grid_y[0]), &grid_y[0], gl.STATIC_DRAW)
-	gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
-	gl.EnableVertexAttribArray(1)
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_y)
+		gl.BufferData(gl.ARRAY_BUFFER, len(grid_y) * size_of(grid_y[0]), &grid_y[0], gl.STATIC_DRAW)
+		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(1)
 
-	// // use non strip mode for the UI elements
-	gl.DrawArrays(gl.LINES, 0, cast(i32)len(grid_x))
+		// // use non strip mode for the UI elements
+		gl.DrawArrays(gl.LINES, 0, cast(i32)len(grid_x))
+	}
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
@@ -318,6 +320,7 @@ shader_line_vertex: string = `
     }
 `
 
+
 shader_line_fragment: string = `
     #version 330 core
     in vec4 v_color;
@@ -326,6 +329,7 @@ shader_line_fragment: string = `
 	    o_color = v_color;
     }
 `
+
 
 // https://en.wikibooks.org/wiki/OpenGL_Programming/Scientific_OpenGL_Tutorial_02
 // Make some 1-D VBOs
