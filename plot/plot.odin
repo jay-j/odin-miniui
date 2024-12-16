@@ -45,6 +45,8 @@ Plot :: struct {
 	scale_mode:             Plot_Scale_Mode,
 
 	// Pointers (via slice) to the actual data being plotted
+	// BUG: As the number of plots changes, stored pointers into this array are not stable.
+	//      Need to change to a handle/id system instead.
 	data:                   [dynamic]Dataset,
 
 	// Using the same shader to draw grid elements, so we need VBOs
@@ -378,31 +380,42 @@ test_colors1 :: proc(t: ^testing.T) {
 	testing.expect(t, abs(rgb2[2] - rgb[2]) < 0.001)
 }
 
+
 hsv_to_rgb :: proc(hsv: glm.vec4) -> (rgb: glm.vec4) {
-	// TODO this is currently broken SAD BUG FIX 
-	C := hsv[2] * hsv[1]
-	h360 := int(hsv[0] * 360)
-	X: f32 = C * f32(1 - abs(((h360 / 60) % 2) - 1))
-	m: f32 = hsv[2] - C
-	fmt.printf("h360=%v        m=%v\n", h360, m)
-	switch v := math.floor(f32(h360 / 60)); v {
+	// Takes hue 0-1
+	h := hsv[0]
+	s := hsv[1]
+	v := hsv[2]
+
+	if s == 0 {
+		rgb = {v, v, v, hsv[3]}
+		return
+	}
+
+	h *= 6 // normalize to [0, 6]
+	i := int(math.floor(h))
+	f := h - f32(i)
+	p := v * (1.0 - s)
+	q := v * (1.0 - s * f)
+	t := v * (1.0 - s * (1.0 - f))
+
+
+	switch i {
 	case 0:
-		rgb = {C, X, 0, 0}
+		rgb = {v, t, p, 0}
 	case 1:
-		rgb = {X, C, 0, 0}
+		rgb = {q, v, p, 0}
 	case 2:
-		fmt.printf("case 2\n")
-		rgb = {0, C, X, 0} // this case.. X is wrong
+		rgb = {p, v, t, 0}
 	case 3:
-		rgb = {0, X, C, 0}
+		rgb = {p, q, v, 0}
 	case 4:
-		rgb = {X, 0, C, 0}
+		rgb = {t, p, v, 0}
 	case 5:
-		rgb = {C, 0, X, 0}
+		rgb = {v, p, q, 0}
 	case:
 		panic("Some failure in HSV conversion")
 	}
-	rgb += m
 
 	rgb[3] = hsv[3] // Alpha (0-1)
 	return rgb
