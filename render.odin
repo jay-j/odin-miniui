@@ -161,7 +161,7 @@ gpu_render_texture :: proc(
 	}
 
 	// Y-clipping
-	scale_height : f32 = f32(src.h) / f32(dst.h)
+	scale_height: f32 = f32(src.h) / f32(dst.h)
 	// Top side clip
 	if dst.y < gui.clip.y {
 		delta := gui.clip.y - dst.y // positive
@@ -191,12 +191,7 @@ gpu_render_texture :: proc(
 	// specify vertex color (tint) based on the mu color
 
 	// This is inverse tinting... so giving color=0 will just cause color not to change? // TODO check the shader too
-	v_color: glm.vec4 =  {
-		1.0 - f32(color.r) / 255.0,
-		1.0 - f32(color.g) / 255.0,
-		1.0 - f32(color.b) / 255.0,
-		1.0 - f32(color.a) / 255.0,
-	}
+	v_color: glm.vec4 = {1.0 - f32(color.r) / 255.0, 1.0 - f32(color.g) / 255.0, 1.0 - f32(color.b) / 255.0, 1.0 - f32(color.a) / 255.0}
 	zpos: f32 = 1
 
 	// TODO this is hardcoded to be looking at the default texture atlas!
@@ -204,40 +199,24 @@ gpu_render_texture :: proc(
 	// PERFORMANCE: float and inverted dimensions of the texture?
 
 	v_left_top: Vertex = {
-		pos =  {
-			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
-			zpos,
-		},
-		uv = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
+		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		uv  = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 	v_left_bottom: Vertex = {
-		pos =  {
-			2.0 * f32(dst.x) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
-			zpos,
-		},
-		uv = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
+		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		uv  = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_bottom: Vertex = {
-		pos =  {
-			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height),
-			zpos,
-		},
-		uv = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
+		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 
 	v_right_top: Vertex = {
-		pos =  {
-			2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0,
-			1.0 - 2.0 * f32(dst.y) / f32(gui.window_height),
-			zpos,
-		},
-		uv = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
+		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 
@@ -256,18 +235,8 @@ gpu_render_texture :: proc(
 draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16) {
 
 	// Actually do the call arrays, activate the right shader, etc.
-	gl.BufferData(
-		gl.ARRAY_BUFFER,
-		len(vertices) * size_of(vertices[0]),
-		raw_data(vertices^),
-		gl.DYNAMIC_DRAW,
-	)
-	gl.BufferData(
-		gl.ELEMENT_ARRAY_BUFFER,
-		len(indices) * size_of(indices[0]),
-		raw_data(indices^),
-		gl.DYNAMIC_DRAW,
-	)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vertices) * size_of(vertices[0]), raw_data(vertices^), gl.DYNAMIC_DRAW)
+	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices) * size_of(indices[0]), raw_data(indices^), gl.DYNAMIC_DRAW)
 
 	{
 		// PERFORMANCE: Send the uniform less frequently
@@ -278,12 +247,7 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 		view := glm.mat4LookAt({0, 0, 2}, {0, 0, 0}, {0, 1, 0}) // eye location, what to look at, up vector
 		u_transform := proj * view * tf
 
-		gl.UniformMatrix4fv(
-			gui.shader.uniforms["u_transform"].location,
-			1,
-			false,
-			&u_transform[0, 0],
-		)
+		gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
 	}
 
 	gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
@@ -342,18 +306,8 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			// TODO rewrite to draw a tinted quad and be able to just add this as another
 			// quad to be drawn by the GPU program; right now this is a lot of GPU calls!
 			gl.Enable(gl.SCISSOR_TEST)
-			gl.Scissor(
-				cmd.rect.x,
-				gui.window_height - cmd.rect.y - cmd.rect.h,
-				cmd.rect.w,
-				cmd.rect.h,
-			)
-			gl.ClearColor(
-				f32(cmd.color.r) / 255.0,
-				f32(cmd.color.g) / 255.0,
-				f32(cmd.color.b) / 255.0,
-				f32(cmd.color.a) / 255.0,
-			)
+			gl.Scissor(cmd.rect.x, gui.window_height - cmd.rect.y - cmd.rect.h, cmd.rect.w, cmd.rect.h)
+			gl.ClearColor(f32(cmd.color.r) / 255.0, f32(cmd.color.g) / 255.0, f32(cmd.color.b) / 255.0, f32(cmd.color.a) / 255.0)
 			gl.Clear(gl.COLOR_BUFFER_BIT)
 
 			// Restore viewport
@@ -365,15 +319,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
-			gpu_render_texture(
-				gui,
-				&vertices,
-				&indices,
-				Rect{x, y, src.w, src.h},
-				src,
-				gui.atlas,
-				cmd.color,
-			)
+			gpu_render_texture(gui, &vertices, &indices, Rect{x, y, src.w, src.h}, src, gui.atlas, cmd.color)
 
 		case ^Command_Clip:
 			// fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
@@ -504,6 +450,7 @@ shader_3D_vertex: string = `
     }
 `
 
+
 shader_3D_fragment: string = `
     #version 330 core
     in vec4 v_color;
@@ -519,3 +466,4 @@ shader_3D_fragment: string = `
         }
     }
 `
+

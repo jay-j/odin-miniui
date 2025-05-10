@@ -21,8 +21,7 @@ state := struct {
 u8_slider :: proc(ctx: ^mu.Context, val: ^u8, lo, hi: u8) -> (res: mu.Result_Set) {
 	mu.push_id(ctx, uintptr(val))
 
-	@(static)
-	tmp: mu.Real
+	@(static) tmp: mu.Real
 	tmp = mu.Real(val^)
 	res = mu.slider(ctx, &tmp, mu.Real(lo), mu.Real(hi), 0, "%.0f", {.ALIGN_CENTER})
 	val^ = u8(tmp)
@@ -46,8 +45,7 @@ reset_log :: proc() {
 
 
 all_windows :: proc(ctx: ^mu.Context) {
-	@(static)
-	opts := mu.Options{.NO_CLOSE}
+	@(static) opts := mu.Options{.NO_CLOSE}
 
 	if mu.window(ctx, "Demo Window", {40, 40, 300, 450}, opts) {
 		if .ACTIVE in mu.header(ctx, "Window Info") {
@@ -104,8 +102,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 				if .SUBMIT in mu.button(ctx, "Button 6") {write_log("Pressed button 6")}
 			}
 			if .ACTIVE in mu.treenode(ctx, "Test 3") {
-				@(static)
-				checks := [3]bool{true, false, true}
+				@(static) checks := [3]bool{true, false, true}
 				mu.checkbox(ctx, "Checkbox 1", &checks[0])
 				mu.checkbox(ctx, "Checkbox 2", &checks[1], readonly = true)
 				mu.checkbox(ctx, "Checkbox 3", &checks[2])
@@ -154,10 +151,8 @@ all_windows :: proc(ctx: ^mu.Context) {
 		}
 		mu.end_panel(ctx)
 
-		@(static)
-		buf: [128]byte
-		@(static)
-		buf_len: int
+		@(static) buf: [128]byte
+		@(static) buf_len: int
 		submitted := false
 		mu.layout_row(ctx, {-70, -1})
 		if .SUBMIT in mu.textbox(ctx, buf[:], &buf_len, readonly = false) {
@@ -174,8 +169,7 @@ all_windows :: proc(ctx: ^mu.Context) {
 	}
 
 	if mu.window(ctx, "Style Window", {350, 250, 300, 240}) {
-		@(static)
-		colors := [mu.Color_Type]string {
+		@(static) colors := [mu.Color_Type]string {
 			.TEXT         = "text",
 			.SELECTION_BG = "text selection",
 			.BORDER       = "border",
@@ -207,3 +201,4 @@ all_windows :: proc(ctx: ^mu.Context) {
 	}
 
 }
+
