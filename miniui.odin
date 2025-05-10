@@ -1314,6 +1314,11 @@ parse_real :: #force_inline proc(s: string) -> (Real, bool) {
 	return Real(f), ok
 }
 
+parse_real_f64 :: #force_inline proc(s: string) -> (f64, bool) {
+	f, ok := strconv.parse_f64(s)
+	return f64(f), ok
+}
+
 number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string: string) -> bool {
 	if ctx.mouse_pressed_bits == {.LEFT} && .SHIFT in ctx.key_down_bits && ctx.hover_id == id {
 		ctx.number_edit_id = id
@@ -1324,6 +1329,24 @@ number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string:
 		res := textbox_raw(ctx, ctx.number_edit_buf[:], &ctx.number_edit_len, id, r, {})
 		if .SUBMIT in res || ctx.focus_id != id {
 			value^, _ = parse_real(string(ctx.number_edit_buf[:ctx.number_edit_len]))
+			ctx.number_edit_id = 0
+		} else {
+			return true
+		}
+	}
+	return false
+}
+
+number_textbox_f64 :: proc(ctx: ^Context, value: ^f64, r: Rect, id: Id, fmt_string: string) -> bool {
+	if ctx.mouse_pressed_bits == {.LEFT} && .SHIFT in ctx.key_down_bits && ctx.hover_id == id {
+		ctx.number_edit_id = id
+		nstr := fmt.bprintf(ctx.number_edit_buf[:], fmt_string, value^)
+		ctx.number_edit_len = len(nstr)
+	}
+	if ctx.number_edit_id == id {
+		res := textbox_raw(ctx, ctx.number_edit_buf[:], &ctx.number_edit_len, id, r, {})
+		if .SUBMIT in res || ctx.focus_id != id {
+			value^, _ = parse_real_f64(string(ctx.number_edit_buf[:ctx.number_edit_len]))
 			ctx.number_edit_id = 0
 		} else {
 			return true
@@ -1381,6 +1404,56 @@ slider :: proc(
 	/* draw thumb */
 	w := ctx.style.thumb_size
 	x := i32((v - low) * Real(base.w - w) / (high - low))
+	thumb := Rect{base.x + x, base.y, w, base.h}
+	draw_control_frame(ctx, id, thumb, .BUTTON, opt)
+	/* draw text  */
+	text_buf: [4096]byte
+	draw_control_text(ctx, fmt.bprintf(text_buf[:], fmt_string, v), base, .TEXT, opt)
+
+	return
+}
+
+slider_f64 :: proc(
+	ctx: ^Context,
+	value: ^f64,
+	low, high: f64,
+	step: f64 = 0.0,
+	fmt_string: string = SLIDER_FMT,
+	opt: Options = {.ALIGN_CENTER},
+) -> (
+	res: Result_Set,
+) {
+	last := value^
+	v := last
+	id := get_id(ctx, uintptr(value))
+	base := layout_next(ctx)
+
+	/* handle text input mode */
+	if number_textbox_f64(ctx, &v, base, id, fmt_string) {
+		return
+	}
+
+	/* handle normal mode */
+	update_control(ctx, id, base, opt)
+
+	/* handle input */
+	if ctx.focus_id == id && ctx.mouse_down_bits == {.LEFT} {
+		v = low + f64(ctx.mouse_pos.x - base.x) * (high - low) / f64(base.w)
+		if step != 0.0 {
+			v = math.floor((v + step / 2) / step) * step
+		}
+	}
+	/* clamp and store value, update res */
+	v = clamp(v, low, high);value^ = v
+	if last != v {
+		res += {.CHANGE}
+	}
+
+	/* draw base */
+	draw_control_frame(ctx, id, base, .BASE, opt)
+	/* draw thumb */
+	w := ctx.style.thumb_size
+	x := i32((v - low) * f64(base.w - w) / (high - low))
 	thumb := Rect{base.x + x, base.y, w, base.h}
 	draw_control_frame(ctx, id, thumb, .BUTTON, opt)
 	/* draw text  */
@@ -1820,3 +1893,4 @@ mouse_released :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_re
 mouse_pressed :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_pressed_bits != nil}
 @(private)
 mouse_down :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_down_bits != nil}
+
