@@ -166,7 +166,7 @@ gpu_render_texture :: proc(
 	if dst.y < gui.clip.y {
 		delta := gui.clip.y - dst.y // positive
 		dst.y += delta
-		dst.w -= delta
+		dst.h -= delta
 
 		delta_scale := i32(f32(delta) * f32(scale_height))
 		src.y += delta_scale
