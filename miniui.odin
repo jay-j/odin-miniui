@@ -25,6 +25,7 @@
 
 package miniui
 
+import "base:intrinsics"
 import "core:fmt"
 import "core:log"
 import "core:math"
@@ -135,7 +136,6 @@ Key :: enum u32 {
 Key_Set :: distinct bit_set[Key;u32]
 
 Id :: distinct u32
-Real :: f32
 Font :: distinct rawptr
 Vec2 :: distinct [2]i32
 Rect :: struct {
@@ -1309,17 +1309,23 @@ textbox_raw :: proc(ctx: ^Context, textbuf: []u8, textlen: ^int, id: Id, r: Rect
 }
 
 @(private)
-parse_real :: #force_inline proc(s: string) -> (Real, bool) {
+parse_real_f32 :: #force_inline proc(s: string) -> (f32, bool) {
 	f, ok := strconv.parse_f64(s)
-	return Real(f), ok
+	return f32(f), ok
 }
 
+@(private)
 parse_real_f64 :: #force_inline proc(s: string) -> (f64, bool) {
 	f, ok := strconv.parse_f64(s)
 	return f64(f), ok
 }
 
-number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string: string) -> bool {
+number_textbox :: proc {
+	number_textbox_f32,
+	number_textbox_f64,
+}
+
+number_textbox_f32 :: proc(ctx: ^Context, value: ^f32, r: Rect, id: Id, fmt_string: string) -> bool {
 	if ctx.mouse_pressed_bits == {.LEFT} && .SHIFT in ctx.key_down_bits && ctx.hover_id == id {
 		ctx.number_edit_id = id
 		nstr := fmt.bprintf(ctx.number_edit_buf[:], fmt_string, value^)
@@ -1328,7 +1334,7 @@ number_textbox :: proc(ctx: ^Context, value: ^Real, r: Rect, id: Id, fmt_string:
 	if ctx.number_edit_id == id {
 		res := textbox_raw(ctx, ctx.number_edit_buf[:], &ctx.number_edit_len, id, r, {})
 		if .SUBMIT in res || ctx.focus_id != id {
-			value^, _ = parse_real(string(ctx.number_edit_buf[:ctx.number_edit_len]))
+			value^, _ = parse_real_f32(string(ctx.number_edit_buf[:ctx.number_edit_len]))
 			ctx.number_edit_id = 0
 		} else {
 			return true
@@ -1363,16 +1369,17 @@ textbox :: proc(ctx: ^Context, buf: []u8, textlen: ^int, readonly: bool = false,
 	return textbox_raw(ctx, buf, textlen, id, r, opt)
 }
 
+
 slider :: proc(
 	ctx: ^Context,
-	value: ^Real,
-	low, high: Real,
-	step: Real = 0.0,
+	value: ^$T,
+	low, high: T,
+	step: T,
 	fmt_string: string = SLIDER_FMT,
 	opt: Options = {.ALIGN_CENTER},
 ) -> (
 	res: Result_Set,
-) {
+) where intrinsics.type_is_numeric(T) {
 	last := value^
 	v := last
 	id := get_id(ctx, uintptr(value))
@@ -1388,7 +1395,7 @@ slider :: proc(
 
 	/* handle input */
 	if ctx.focus_id == id && ctx.mouse_down_bits == {.LEFT} {
-		v = low + Real(ctx.mouse_pos.x - base.x) * (high - low) / Real(base.w)
+		v = low + T(ctx.mouse_pos.x - base.x) * (high - low) / T(base.w)
 		if step != 0.0 {
 			v = math.floor((v + step / 2) / step) * step
 		}
@@ -1403,7 +1410,7 @@ slider :: proc(
 	draw_control_frame(ctx, id, base, .BASE, opt)
 	/* draw thumb */
 	w := ctx.style.thumb_size
-	x := i32((v - low) * Real(base.w - w) / (high - low))
+	x := i32((v - low) * T(base.w - w) / (high - low))
 	thumb := Rect{base.x + x, base.y, w, base.h}
 	draw_control_frame(ctx, id, thumb, .BUTTON, opt)
 	/* draw text  */
@@ -1413,58 +1420,17 @@ slider :: proc(
 	return
 }
 
-slider_f64 :: proc(
+
+// CAUTION: The format string is for interpreting the value, not for adding a label
+number :: proc(
 	ctx: ^Context,
-	value: ^f64,
-	low, high: f64,
-	step: f64 = 0.0,
+	value: ^$T,
+	step: T,
 	fmt_string: string = SLIDER_FMT,
 	opt: Options = {.ALIGN_CENTER},
 ) -> (
 	res: Result_Set,
-) {
-	last := value^
-	v := last
-	id := get_id(ctx, uintptr(value))
-	base := layout_next(ctx)
-
-	/* handle text input mode */
-	if number_textbox_f64(ctx, &v, base, id, fmt_string) {
-		return
-	}
-
-	/* handle normal mode */
-	update_control(ctx, id, base, opt)
-
-	/* handle input */
-	if ctx.focus_id == id && ctx.mouse_down_bits == {.LEFT} {
-		v = low + f64(ctx.mouse_pos.x - base.x) * (high - low) / f64(base.w)
-		if step != 0.0 {
-			v = math.floor((v + step / 2) / step) * step
-		}
-	}
-	/* clamp and store value, update res */
-	v = clamp(v, low, high);value^ = v
-	if last != v {
-		res += {.CHANGE}
-	}
-
-	/* draw base */
-	draw_control_frame(ctx, id, base, .BASE, opt)
-	/* draw thumb */
-	w := ctx.style.thumb_size
-	x := i32((v - low) * f64(base.w - w) / (high - low))
-	thumb := Rect{base.x + x, base.y, w, base.h}
-	draw_control_frame(ctx, id, thumb, .BUTTON, opt)
-	/* draw text  */
-	text_buf: [4096]byte
-	draw_control_text(ctx, fmt.bprintf(text_buf[:], fmt_string, v), base, .TEXT, opt)
-
-	return
-}
-
-// CAUTION: The format string is for interpreting the value, not for adding a label
-number :: proc(ctx: ^Context, value: ^Real, step: Real, fmt_string: string = SLIDER_FMT, opt: Options = {.ALIGN_CENTER}) -> (res: Result_Set) {
+) where intrinsics.type_is_numeric(T) {
 	id := get_id(ctx, uintptr(value))
 	base := layout_next(ctx)
 	last := value^
@@ -1479,7 +1445,7 @@ number :: proc(ctx: ^Context, value: ^Real, step: Real, fmt_string: string = SLI
 
 	/* handle input */
 	if ctx.focus_id == id && ctx.mouse_down_bits == {.LEFT} {
-		value^ += Real(ctx.mouse_delta.x) * step
+		value^ += T(ctx.mouse_delta.x) * step
 	}
 	/* set flag if value changed */
 	if value^ != last {
@@ -1893,4 +1859,3 @@ mouse_released :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_re
 mouse_pressed :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_pressed_bits != nil}
 @(private)
 mouse_down :: #force_inline proc(ctx: ^Context) -> bool {return ctx.mouse_down_bits != nil}
-
