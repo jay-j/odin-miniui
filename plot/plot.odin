@@ -1,4 +1,5 @@
 package plot
+import ha "./handle"
 import "core:fmt"
 import "core:log"
 import "core:math"
@@ -45,9 +46,9 @@ Plot :: struct {
 	scale_mode:             Plot_Scale_Mode,
 
 	// Pointers (via slice) to the actual data being plotted
-	// BUG: As the number of plots changes, stored pointers into this array are not stable.
-	//      Need to change to a handle/id system instead.
-	data:                   [dynamic]Dataset,
+	// A Handle_Array is used to provide dynamic memory while being robust to
+	// large addition and removals, e.g. h5explorer.
+	data:                   ha.Handle_Array(Dataset, Dataset_Handle),
 
 	// Using the same shader to draw grid elements, so we need VBOs
 	vbo_grid_x:             u32,
@@ -55,12 +56,14 @@ Plot :: struct {
 }
 
 
+Dataset_Handle :: distinct ha.Handle
 Dataset :: struct {
-	x:     []f32,
-	y:     []f32,
-	color: glm.vec4,
-	vbo_x: u32,
-	vbo_y: u32,
+	handle: Dataset_Handle,
+	x:      []f32,
+	y:      []f32,
+	color:  glm.vec4,
+	vbo_x:  u32,
+	vbo_y:  u32,
 }
 
 
@@ -100,6 +103,9 @@ plot_init :: proc(
 	// Since this is calling GPU setup and allocations, it is recommended to do
 	// this once during setup; not every frame.
 
+	// CAUTION: These dynamic arrays are expanding on the default allocator
+	ha.init(&plot.data)
+
 	plot.color_background = color_background
 	plot.color_annotation = color_annotation
 
@@ -136,24 +142,28 @@ plot_init :: proc(
 }
 
 
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}, auto_range := false) -> (dset: ^Dataset) {
+dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}, auto_range := false) -> Dataset_Handle {
 	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 	// TODO: how does this work if ther isn't data available yet? 
-	append(&plot.data, Dataset{x = x[:], y = y[:]})
-	dset = &plot.data[len(plot.data) - 1]
+	dataset := Dataset {
+		x = x[:],
+		y = y[:],
+	}
 
-	gl.GenBuffers(1, &dset.vbo_x)
-	gl.GenBuffers(1, &dset.vbo_y)
+	gl.GenBuffers(1, &dataset.vbo_x)
+	gl.GenBuffers(1, &dataset.vbo_y)
 
 	// If no color is given use a default changing value
 	if color.a == -1 {
-		dset.color = plot.color_graph_default
+		dataset.color = plot.color_graph_default
 		// TODO increment the default color in HSV space
 	} else {
-		dset.color = color
+		dataset.color = color
 	}
 
-	dataset_update(dset, x, y)
+	dataset_update(&dataset, x, y)
+
+	dh := ha.add(&plot.data, dataset)
 
 	if auto_range {
 		range_x: [2]f32 = {slice.min(x[:]), slice.max(x[:])}
@@ -173,13 +183,19 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 		}
 	}
 
-	return dset
+	return dh
 }
 
 // TODO set of procedures to call to change plot pan & zoom
 // have the user implement how these get called
 
-dataset_update :: proc(dset: ^Dataset, x, y: []f32) {
+dataset_update :: proc {
+	dataset_update_ptr,
+	dataset_update_handle,
+}
+
+
+dataset_update_ptr :: proc(dset: ^Dataset, x, y: []f32) {
 	// Update pointers and send new data to the GPU
 	assert(len(x) == len(y))
 	dset.x = x
@@ -188,6 +204,12 @@ dataset_update :: proc(dset: ^Dataset, x, y: []f32) {
 	gl.BufferData(gl.ARRAY_BUFFER, len(x) * size_of(x[0]), &x[0], gl.STATIC_DRAW)
 	gl.BindBuffer(gl.ARRAY_BUFFER, dset.vbo_y)
 	gl.BufferData(gl.ARRAY_BUFFER, len(y) * size_of(y[0]), &y[0], gl.STATIC_DRAW)
+}
+
+
+dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []f32) {
+	ptr := ha.get_ptr(plot.data, dset_handle)
+	dataset_update_ptr(ptr, x[:], y[:])
 }
 
 
@@ -252,10 +274,12 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 	gl.BindVertexArray(rend.vao)
 
 	// OpenGL camera space goes from z=0 to -1
-	dz: f32 = 1.0 / (3 + f32(len(plot.data)))
+	dz: f32 = 1.0 / (3 + f32(plot.data.num))
 	z: f32 = -2 * dz
 
-	for &dataset in plot.data {
+	dataset_iter := ha.make_iter(plot.data)
+
+	for dataset in ha.iter_ptr(&dataset_iter) {
 		// set color uniform
 		gl.Uniform4fv(rend.uniforms["color"].location, 1, &dataset.color[0])
 		gl.Uniform1f(rend.uniforms["z"].location, z)

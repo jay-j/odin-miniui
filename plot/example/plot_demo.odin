@@ -2,6 +2,7 @@ package plot_demo
 
 import plt ".."
 import mu "../.."
+import ha "../handle"
 import "core:fmt"
 import "core:log"
 import "core:math"
@@ -62,8 +63,10 @@ main :: proc() {
 	sine := plt.dataset_add(&plot, x[:], y[:], auto_range = true)
 
 	spiral := plt.dataset_add(&plot, x2[:], y2[:], auto_range = true)
-	spiral.color = {0.1, 0.8, 0.8, 1.0}
-
+	{
+		ptr := ha.get_ptr(plot.data, spiral)
+		ptr.color = {0.1, 0.8, 0.8, 1.0}
+	}
 
 	// Bundle the data used by miniui to display the framebuffer in an image element.
 	plot_texture := mu.Texture {
@@ -115,7 +118,7 @@ main :: proc() {
 
 				// Delaying the plot update to here since if the plot isn't visible,
 				// the data doesn't need to be sent to the GPU.
-				plt.dataset_update(spiral, x2[:], y2[:])
+				plt.dataset_update(&plot, spiral, x2[:], y2[:])
 
 				// Queue the miniui command first so that the desired framebuffer size
 				// is exactly known. Then the framebuffer is updated befor the command
