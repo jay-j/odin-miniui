@@ -138,6 +138,8 @@ plot_init :: proc(
 	gl.GenBuffers(1, &plot.vbo_grid_x)
 	gl.GenBuffers(1, &plot.vbo_grid_y)
 
+	plot.color_graph_default = {0, 0.9, 0.9, 1.0}
+
 	return plot
 }
 
@@ -156,7 +158,14 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 	// If no color is given use a default changing value
 	if color.a == -1 {
 		dataset.color = plot.color_graph_default
-		// TODO increment the default color in HSV space
+
+		// Auto-increment the default color in HSV space
+		hsv := rgb_to_hsv(plot.color_graph_default)
+		hsv[0] += 0.37
+		if hsv[0] > 1.0 {
+			hsv[0] -= 1.0
+		}
+		plot.color_graph_default = hsv_to_rgb(hsv)
 	} else {
 		dataset.color = color
 	}
