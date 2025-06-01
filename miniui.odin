@@ -33,6 +33,7 @@ import "core:sort"
 import "core:strconv"
 import "core:strings"
 import textedit "core:text/edit"
+import plt "plot"
 import SDL "vendor:sdl2"
 
 COMMAND_LIST_SIZE :: #config(MINIUI_COMMAND_LIST_SIZE, 256 * 1024)
@@ -275,6 +276,8 @@ Context :: struct {
 	text_input:                      strings.Builder, // uses `_text_store` as backing store with nil_allocator.
 	textbox_state:                   textedit.State,
 	textbox_offset:                  i32,
+	/* plots */
+	plot_renderer:                   ^plt.PlotRenderer,
 }
 
 // Stack is a fixed capacity array, with a monitored index "head" position. 

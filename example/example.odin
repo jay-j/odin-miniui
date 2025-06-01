@@ -3,6 +3,7 @@ package miniui_example
 // Example!
 
 import mu ".."
+import plt "../plot"
 import "core:fmt"
 import glm "core:math/linalg/glsl"
 import "core:time"
@@ -32,6 +33,7 @@ main :: proc() {
 
 	// Init from miniui
 	gui := mu.init()
+	gui.ctx.plot_renderer = plt.render_init()
 
 	tex_demo: mu.Texture = setup_texture("texture_demo.png")
 
@@ -43,6 +45,17 @@ main :: proc() {
 		height     = 1080,
 		inv_width  = 1.0 / 1920,
 		inv_height = 1.0 / 1080,
+	}
+
+	// Sample data for the plot
+	plot := plt.plot_init(1920, 1080)
+	{
+		x := linspace(-1.5, 2, 1024)
+		y := make([]f32, len(x))
+		for i in 0 ..< len(x) {
+			y[i] = 0.9 * math.sin(4 * x[i])
+		}
+		sine := plt.dataset_add(&plot, x[:], y[:], auto_range = true)
 	}
 
 	main_loop: for {
@@ -147,6 +160,11 @@ main :: proc() {
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "bottom")
 				}
+			}
+
+			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 400, 300, 300}) {
+				mu.layout_row(&gui.ctx, {-1}, -1)
+				mu.plot(&gui.ctx, &plot, render_cmd = true)
 			}
 		}
 
@@ -476,3 +494,14 @@ void main(){
     color_out = color;
 }
 `
+
+
+linspace :: proc(low, high: f32, count: int, allocator := context.allocator) -> (res: []f32) {
+	assert(high > low)
+	res = make([]f32, count)
+	dx := (high - low) / f32(count)
+	for i in 0 ..< count {
+		res[i] = dx * f32(i) + low
+	}
+	return res
+}
