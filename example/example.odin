@@ -55,7 +55,7 @@ main :: proc() {
 		for i in 0 ..< len(x) {
 			y[i] = 0.9 * math.sin(4 * x[i])
 		}
-		sine := plt.dataset_add(&plot, x[:], y[:], auto_range = true)
+		sine := plt.dataset_add(&plot, x[:], y[:])
 	}
 
 	main_loop: for {

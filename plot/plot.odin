@@ -44,6 +44,8 @@ Plot :: struct {
 	range_x:                [2]f32,
 	range_y:                [2]f32,
 	scale_mode:             Plot_Scale_Mode,
+	scale_auto_x:           bool,
+	scale_auto_y:           bool,
 
 	// Pointers (via slice) to the actual data being plotted
 	// A Handle_Array is used to provide dynamic memory while being robust to
@@ -64,6 +66,7 @@ Dataset :: struct {
 	color:  glm.vec4,
 	vbo_x:  u32,
 	vbo_y:  u32,
+	// TODO: is it more performant to cache max/min or to compute on demand?
 }
 
 
@@ -144,7 +147,7 @@ plot_init :: proc(
 }
 
 
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}, auto_range := false) -> Dataset_Handle {
+dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
 	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 	// TODO: how does this work if ther isn't data available yet? 
 	dataset := Dataset {
@@ -173,24 +176,6 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 	dataset_update(&dataset, x, y)
 
 	dh := ha.add(&plot.data, dataset)
-
-	if auto_range {
-		range_x: [2]f32 = {slice.min(x[:]), slice.max(x[:])}
-		if range_x[0] < plot.range_x[0] {
-			plot.range_x[0] = range_x[0]
-		}
-		if range_x[1] > plot.range_x[1] {
-			plot.range_x[1] = range_x[1]
-		}
-
-		range_y: [2]f32 = {slice.min(y[:]), slice.max(y[:])}
-		if range_y[0] < plot.range_y[0] {
-			plot.range_y[0] = range_y[0]
-		}
-		if range_y[1] > plot.range_y[1] {
-			plot.range_y[1] = range_y[1]
-		}
-	}
 
 	return dh
 }
@@ -222,9 +207,45 @@ dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []
 }
 
 
+scale_auto_x :: proc(plot: ^Plot) {
+	low: f32 = max(f32)
+	high: f32 = min(f32)
+
+	// Iterate through every dataset
+	dataset_iter := ha.make_iter(plot.data)
+
+	for dataset in ha.iter_ptr(&dataset_iter) {
+		low = min(low, slice.min(dataset.x[:]))
+		high = max(high, slice.max(dataset.x[:]))
+	}
+	plot.range_x = {low, high}
+}
+
+
+scale_auto_y :: proc(plot: ^Plot) {
+	low: f32 = max(f32)
+	high: f32 = min(f32)
+
+	// Iterate through every dataset
+	dataset_iter := ha.make_iter(plot.data)
+
+	for dataset in ha.iter_ptr(&dataset_iter) {
+		low = min(low, slice.min(dataset.y[:]))
+		high = max(high, slice.max(dataset.y[:]))
+	}
+	plot.range_y = {low, high}
+}
+
+
 draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = true) {
 	// STEP 4: Render the Plot to its framebuffer
 	// Displaying the framebuffer is left to the user
+	// PERFORMANCE: This does not need to be called again if nothing in the plot has changed
+
+	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
+		scale_auto_x(plot)
+		scale_auto_y(plot)
+	}
 
 	gl.UseProgram(rend.program)
 

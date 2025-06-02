@@ -117,6 +117,7 @@ Mouse :: enum u32 {
 	MIDDLE,
 }
 Mouse_Set :: distinct bit_set[Mouse;u32]
+MOUSE_DRAG_TOLERANCE :: 3
 
 Key :: enum u32 {
 	SHIFT,
