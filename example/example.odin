@@ -85,8 +85,7 @@ main :: proc() {
 
 			if mu.window(&gui.ctx, "test window", {0, 0, 200, 400}) {
 				mu.layout_row(&gui.ctx, {-1}, 0)
-				@(static)
-				check_early: bool = false
+				@(static) check_early: bool = false
 				mu.checkbox(&gui.ctx, "checkbox_early", &check_early)
 
 				mu.label(&gui.ctx, "hello world")
@@ -95,23 +94,19 @@ main :: proc() {
 					fmt.printf("button was pressed\n")
 				}
 
-				@(static)
-				check: bool = false
+				@(static) check: bool = false
 				mu.checkbox(&gui.ctx, "here a checkbox", &check)
 				if check {
 					mu.label(&gui.ctx, "true")
 				}
 
-				@(static)
-				number: f32 = 3
+				@(static) number: f32 = 3
 				mu.number(&gui.ctx, &number, 0.5, "%.2f")
 
-				@(static)
-				number2: f32 = 11
+				@(static) number2: f32 = 11
 				mu.slider(&gui.ctx, &number2, -20, 20, 0.5, "%.1f")
 
-				@(static)
-				check_end: bool = false
+				@(static) check_end: bool = false
 				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
@@ -425,33 +420,33 @@ viewport_draw :: proc(vp: ^Viewport, width, height: i32) {
 	{
 		x := Viewport_Line{}
 		x.vert[0] = Viewport_Vertex {
-			pos = {0.0, 0.0, 0.0},
+			pos   = {0.0, 0.0, 0.0},
 			color = {1.0, 0.0, 0.0, 1.0},
 		}
 		x.vert[1] = Viewport_Vertex {
-			pos = {1.0, 0.0, 0.0},
+			pos   = {1.0, 0.0, 0.0},
 			color = {1.0, 0.0, 0.0, 1.0},
 		}
 		append(&lineset, x)
 
 		y := Viewport_Line{}
 		y.vert[0] = Viewport_Vertex {
-			pos = {0.0, 0.0, 0.0},
+			pos   = {0.0, 0.0, 0.0},
 			color = {0.0, 1.0, 0.0, 1.0},
 		}
 		y.vert[1] = Viewport_Vertex {
-			pos = {0.0, 1.0, 0.0},
+			pos   = {0.0, 1.0, 0.0},
 			color = {0.0, 1.0, 0.0, 1.0},
 		}
 		append(&lineset, y)
 
 		z := Viewport_Line{}
 		z.vert[0] = Viewport_Vertex {
-			pos = {0.0, 0.0, 0.0},
+			pos   = {0.0, 0.0, 0.0},
 			color = {0.0, 0.0, 1.0, 1.0},
 		}
 		z.vert[1] = Viewport_Vertex {
-			pos = {0.0, 0.0, 1.0},
+			pos   = {0.0, 0.0, 1.0},
 			color = {0.0, 0.0, 1.0, 1.0},
 		}
 		append(&lineset, z)
@@ -484,6 +479,7 @@ void main(){
 	color = color_in;
 }
 `
+
 
 shader_lines_frag: string = `
 #version 330 core
