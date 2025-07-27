@@ -15,7 +15,6 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 
 	// BUG: If the size of the container has changed, then it needs to be re-rendered
 
-	// TODO Handle LMB pan click
 	// TODO Handle scroll wheel zooming
 	render_cmd := render_cmd
 
@@ -64,9 +63,22 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		}
 	}
 
+	// LMB Interactions: Click-to-Drag
+	if .LEFT in ctx.mouse_down_bits && ctx.focus_id == id {
+		drag_delta: [2]f32
+		drag_delta.x = f32(ctx.mouse_delta.x) * f32(plot.range_x[1] - plot.range_x[0]) / f32(r.w)
+		drag_delta.y = f32(ctx.mouse_delta.y) * f32(plot.range_y[1] - plot.range_y[0]) / f32(r.h)
+		if !plot.scale_auto_x {
+			plot.range_x -= drag_delta.x
+		}
+		if !plot.scale_auto_y {
+			plot.range_y += drag_delta.y
+		}
+	}
+
 	// BUG Cuts off long text length
 	if popup(ctx, "Plot#Context Menu") {
-		if .SUBMIT in button(ctx, "reset") {
+		if .SUBMIT in button(ctx, "reset zoom") {
 			plt.scale_auto_x(plot)
 			plt.scale_auto_y(plot)
 		}
