@@ -55,17 +55,25 @@ main :: proc() {
 		y2[i] = (th[i] / 50.0 + 0.04 * math.sin(10 * th[i])) * math.sin(th[i])
 	}
 
+	y3 := make([]f32, len(x))
+	for i in 0 ..< len(x) {
+		y3[i] = 0.8 * math.cos(3 * x[i])
+	}
+
 	// Do the plotting
 	plot_renderer := plt.render_init()
 
 	plot := plt.plot_init(1920, 1080)
 
-	sine := plt.dataset_add(&plot, x[:], y[:], auto_range = true)
+	sine := plt.dataset_add(&plot, x[:], y[:])
+	sine2 := plt.dataset_add(&plot, x[:], y3[:])
 
-	spiral := plt.dataset_add(&plot, x2[:], y2[:], auto_range = true)
+	spiral := plt.dataset_add(&plot, x2[:], y2[:])
 	{
+		// Handles are used to identify datasets rather than pointers for stability.
+		// The get_ptr() procedure can be used when direct access is required.
 		ptr := ha.get_ptr(plot.data, spiral)
-		ptr.color = {0.1, 0.8, 0.8, 1.0}
+		ptr.color = {1.0, 0.2, 0.2, 1.0}
 	}
 
 	// Bundle the data used by miniui to display the framebuffer in an image element.
@@ -121,8 +129,9 @@ main :: proc() {
 				plt.dataset_update(&plot, spiral, x2[:], y2[:])
 
 				// Queue the miniui command first so that the desired framebuffer size
-				// is exactly known. Then the framebuffer is updated befor the command
+				// is exactly known. Then the framebuffer is updated before the command
 				// queue is executed in mu.draw().
+				// NOTE: This demonstrates just drawing the framebuffer contents. See mu.plot() for interactivity.
 				mu.layout_row(&gui.ctx, {-1}, -1)
 				vpw, vph := mu.image_raw(&gui.ctx, plot_texture)
 				plt.draw(plot_renderer, &plot, vpw, vph)

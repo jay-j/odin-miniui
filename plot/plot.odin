@@ -149,7 +149,7 @@ plot_init :: proc(
 
 dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
 	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
-	// TODO: how does this work if ther isn't data available yet? 
+	// TODO: how does this work if there isn't data available yet? 
 	dataset := Dataset {
 		x = x[:],
 		y = y[:],
