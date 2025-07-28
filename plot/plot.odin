@@ -11,7 +11,8 @@ import gl "vendor:OpenGL"
 // Get a framebuffer provided by/for something
 
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
-PLOT_DEFAULT_COLOR_ANNOTATION :: glm.vec4{0.5, 0.7, 0.5, 1.0}
+PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
+PLOT_DEFAULT_COLOR_ANNOTATION_MINOR :: glm.vec4{0.2, 0.2, 0.2, 1.0}
 
 // TODO: How to add text labels?
 
@@ -37,7 +38,8 @@ Plot :: struct {
 	framebuffer_width_max:  i32,
 	framebuffer_height_max: i32,
 	color_background:       glm.vec4,
-	color_annotation:       glm.vec4,
+	color_annotation_major: glm.vec4,
+	color_annotation_minor: glm.vec4,
 	color_graph_default:    glm.vec4,
 
 	// the current display portion
@@ -97,7 +99,7 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 plot_init :: proc(
 	width, height: i32,
 	color_background := PLOT_DEFAULT_COLOR_BACKGROUND,
-	color_annotation := PLOT_DEFAULT_COLOR_ANNOTATION,
+	// color_annotation := PLOT_DEFAULT_COLOR_ANNOTATION,
 ) -> (
 	plot: Plot,
 ) {
@@ -110,7 +112,8 @@ plot_init :: proc(
 	ha.init(&plot.data)
 
 	plot.color_background = color_background
-	plot.color_annotation = color_annotation
+	plot.color_annotation_major = PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR
+	plot.color_annotation_minor = PLOT_DEFAULT_COLOR_ANNOTATION_MINOR
 
 	gl.CreateFramebuffers(1, &plot.framebuffer)
 	log.debugf("Created framebuffer: %v", gl.GetError())
@@ -303,9 +306,14 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 
 	gl.BindVertexArray(rend.vao)
 
-	// OpenGL camera space goes from z=0 to -1
+	// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
 	dz: f32 = 1.0 / (3 + f32(plot.data.num))
-	z: f32 = -2 * dz
+	z: f32 = -1 + dz
+
+	if grid {
+		draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz)
+		z += 2 * dz
+	}
 
 	dataset_iter := ha.make_iter(plot.data)
 
@@ -313,7 +321,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 		// set color uniform
 		gl.Uniform4fv(rend.uniforms["color"].location, 1, &dataset.color[0])
 		gl.Uniform1f(rend.uniforms["z"].location, z)
-		z -= dz
+		z += dz
 
 		// link these VBOs to this ARRAY_BUFFER
 		gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_x)
@@ -328,36 +336,82 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
 	}
 
-	if grid {
-		// set color uniform for grid/UI
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation[0])
-		gl.Uniform1f(rend.uniforms["z"].location, -dz)
-
-		// Fill the UI VBOs with whatever data they need
-		// PERFORMANCE: only if the view has changed?
-		// TODO : so much better grid stuff, respond to scale add grid instead of just axis marks, etc.
-		dg: f32 = 0.0025 // scale by pixels
-		grid_x: []f32 = {grid_bounds_x[0], grid_bounds_x[1], grid_bounds_x[0], grid_bounds_x[1], dg, dg, -dg, -dg}
-		grid_y: []f32 = {dg, dg, -dg, -dg, grid_bounds_y[0], grid_bounds_y[1], grid_bounds_y[0], grid_bounds_y[1]}
-
-
-		// link the UI VBOs to this ARRAY_BUFFER
-		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
-		gl.BufferData(gl.ARRAY_BUFFER, len(grid_x) * size_of(grid_x[0]), &grid_x[0], gl.STATIC_DRAW)
-		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(0)
-
-		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_y)
-		gl.BufferData(gl.ARRAY_BUFFER, len(grid_y) * size_of(grid_y[0]), &grid_y[0], gl.STATIC_DRAW)
-		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(1)
-
-		// // use non strip mode for the UI elements
-		gl.DrawArrays(gl.LINES, 0, cast(i32)len(grid_x))
-	}
-
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
+
+
+draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y: [2]f32, dz: f32) {
+	// PERFORMANCE: only if the view has changed?
+	// TODO: Scale labels
+	zdepth: f32 = -1.0
+
+	grid_x := make([dynamic]f32, 0, 60, context.temp_allocator)
+	grid_y := make([dynamic]f32, 0, 60, context.temp_allocator)
+
+	// Add the grid geometry to the array
+	{
+		origin_x := []f32{grid_bounds_x[0], grid_bounds_x[1], 0, 0}
+		append(&grid_x, ..origin_x[:])
+		origin_y := []f32{0, 0, grid_bounds_y[0], grid_bounds_y[1]}
+		append(&grid_y, ..origin_y[:])
+	}
+	calculate_grid(grid_bounds_x, grid_bounds_y, &grid_x, &grid_y)
+	calculate_grid(grid_bounds_y, grid_bounds_x, &grid_y, &grid_x)
+
+	// Upload vertices to draw, to be used for both sets of draw calls
+	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
+	gl.BufferData(gl.ARRAY_BUFFER, len(grid_x) * size_of(grid_x[0]), &grid_x[0], gl.STATIC_DRAW)
+	gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+	gl.EnableVertexAttribArray(0)
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_y)
+	gl.BufferData(gl.ARRAY_BUFFER, len(grid_y) * size_of(grid_y[0]), &grid_y[0], gl.STATIC_DRAW)
+	gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+	gl.EnableVertexAttribArray(1)
+
+	{
+		// Draw minor lines / full grid
+		zdepth += dz
+		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_minor[0])
+
+		// HACK: Hardcoded the origin mark is the first 4 vertices
+		gl.DrawArrays(gl.LINES, 4, cast(i32)len(grid_x) - 4)
+	}
+
+	// Draw major lines over top
+	{
+		zdepth += dz
+		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_major[0])
+		// HACK: Hardcoded the origin mark is the first 4 vertices
+		gl.DrawArrays(gl.LINES, 0, 4)
+	}
+}
+
+
+// Given the current view bounds, calculate where the grid lines should be and append verticies to the draw lists.
+calculate_grid :: proc(bounds: [2]f32, bounds_static: [2]f32, draw_inc: ^[dynamic]f32, draw_static: ^[dynamic]f32) -> (inc: f32) {
+	// TODO: Manually specified grid increment
+	// TODO: Responsive to the number of pixels used to render the plot
+	range := bounds[1] - bounds[0]
+
+	// Power of 10 increments one order of magnitude smaller than the displayed range.
+	inc = math.pow(10, math.floor(math.log10(range) - 1))
+
+	// Calculate the first grid line, round down to the nearest increment
+	// then add until past the max bounds.
+	grid_first := math.floor(bounds[0] / inc) * inc
+	for x := grid_first; x < bounds[1]; x += inc {
+		append(draw_inc, x)
+		append(draw_inc, x)
+		append(draw_static, bounds_static[0])
+		append(draw_static, bounds_static[1])
+	}
+
+	return
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // 
