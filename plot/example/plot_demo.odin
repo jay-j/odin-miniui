@@ -60,7 +60,7 @@ main :: proc() {
 		y3[i] = 0.8 * math.cos(3 * x[i])
 	}
 
-	// Do the plotting
+	// Create the plot resources and send data to the GPU
 	plot_renderer := plt.render_init()
 
 	plot := plt.plot_init(1920, 1080)
@@ -144,7 +144,7 @@ main :: proc() {
 			mu.draw_prepare(gui, window_width, window_height)
 		}
 
-		gl.ClearColor(0.5, 0.7, 1.0, 0.0) // TODO what is the right value?
+		gl.ClearColor(0.5, 0.7, 1.0, 0.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 		mu.draw(gui, context.temp_allocator)
 		SDL.GL_SwapWindow(app.window)

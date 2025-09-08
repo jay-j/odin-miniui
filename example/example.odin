@@ -38,14 +38,6 @@ main :: proc() {
 	tex_demo: mu.Texture = setup_texture("texture_demo.png")
 
 	vp := viewport_init(1920, 1080) // TODO hardcoded. Maximum screen dimensions
-	vp_texture := mu.Texture {
-		texture_id = vp.framebuffer_texture_id,
-		// TODO need these to be non insane and constant things! link between render calls and this!
-		width      = 1920,
-		height     = 1080,
-		inv_width  = 1.0 / 1920,
-		inv_height = 1.0 / 1080,
-	}
 
 	// Sample data for the plot
 	plot := plt.plot_init(1920, 1080)
@@ -76,7 +68,7 @@ main :: proc() {
 
 		}
 
-		gl.ClearColor(0.5, 0.7, 1.0, 0.0) // TODO what is the right value?
+		gl.ClearColor(0.5, 0.7, 1.0, 0.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 		{
@@ -132,7 +124,7 @@ main :: proc() {
 					mu.label(&gui.ctx, "Hello this should be above the image")
 
 					mu.layout_row(&gui.ctx, {-1}, -1)
-					vpw, vph = mu.image_raw(&gui.ctx, vp_texture)
+					vpw, vph = mu.image_raw(&gui.ctx, vp.texture)
 					viewport_draw(&vp, vpw, vph)
 				}
 
@@ -143,14 +135,14 @@ main :: proc() {
 
 					// This slot is too wide for the image
 					mu.layout_row(&gui.ctx, {-1}, 128)
-					mu.image_scaled(&gui.ctx, vp_texture, src = mu.Rect{w = vpw, h = vph})
+					mu.image_scaled(&gui.ctx, vp.texture, src = mu.Rect{w = vpw, h = vph})
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "framebuffer above this?")
 
 					// This slot is too narrow for the image
 					mu.layout_row(&gui.ctx, {32, 32, -1}, 200)
 					mu.label(&gui.ctx, "left")
-					mu.image_scaled(&gui.ctx, vp_texture, src = mu.Rect{w = vpw, h = vph})
+					mu.image_scaled(&gui.ctx, vp.texture, src = mu.Rect{w = vpw, h = vph})
 					mu.label(&gui.ctx, "right")
 					mu.layout_row(&gui.ctx, {-1})
 					mu.label(&gui.ctx, "bottom")

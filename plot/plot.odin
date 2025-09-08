@@ -8,8 +8,6 @@ import "core:slice"
 import "core:testing"
 import gl "vendor:OpenGL"
 
-// Get a framebuffer provided by/for something
-
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MINOR :: glm.vec4{0.2, 0.2, 0.2, 1.0}
@@ -23,7 +21,6 @@ Plot_Scale_Mode :: enum {
 }
 
 
-// PERFORMANCE: consider a separate PlotRenderer struct so shader program setup isn't duplicate work
 PlotRenderer :: struct {
 	program:  u32,
 	uniforms: map[string]gl.Uniform_Info,
@@ -32,6 +29,7 @@ PlotRenderer :: struct {
 
 
 Plot :: struct {
+	framebuffer_dirty:      bool, // TODO: Implement flagging the framebuffer 
 	framebuffer:            u32,
 	framebuffer_rgb:        u32,
 	framebuffer_depth:      u32,
@@ -72,43 +70,38 @@ Dataset :: struct {
 }
 
 
+// STEP 1: Setup the shader to draw Plots.
+// One PlotRenderer can (and usually should) be used for all plots in a program.
+// ASSUME: The caller has already setup an OpenGL context.
 render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
-	// STEP 1: Setup the shader to draw Plots. 
 	context.allocator = allocator
 
 	rend = new(PlotRenderer)
 
-	// Init shader
-	{
-		program_ok: bool
-		rend.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
-		if !program_ok {
-			panic("failed to create GLSL program for Plot rendering.")
-		}
-		gl.UseProgram(rend.program)
-
-		rend.uniforms = gl.get_uniforms_from_program(rend.program)
-
-		gl.GenVertexArrays(1, &rend.vao)
+	program_ok: bool
+	rend.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
+	if !program_ok {
+		panic("failed to create GLSL program for Plot rendering.")
 	}
+	gl.UseProgram(rend.program)
+
+	rend.uniforms = gl.get_uniforms_from_program(rend.program)
+
+	gl.GenVertexArrays(1, &rend.vao)
 
 	return rend
 }
 
 
-plot_init :: proc(
-	width, height: i32,
-	color_background := PLOT_DEFAULT_COLOR_BACKGROUND,
-	// color_annotation := PLOT_DEFAULT_COLOR_ANNOTATION,
-) -> (
-	plot: Plot,
-) {
-	// STEP 2: Create a Plot
-	// width, height of maximum framebuffer dimensions
-	// Since this is calling GPU setup and allocations, it is recommended to do
-	// this once during setup; not every frame.
+// STEP 2: Create a Plot and GPU Framebuffer
+// Sets up a framebuffer of dimensions (width, height). The end user's screen resolution is a
+// good default, but some situations may call for larger (extra high res image export),
+// or smaller (performance when displaying many plots) framebuffer dimensions.
+// Since this proc is calling GPU setup and allocations, it is recommended to do this (once)
+// during setup; not every frame.
+plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT_COLOR_BACKGROUND) -> (plot: Plot) {
 
-	// CAUTION: These dynamic arrays are expanding on the default allocator
+	// CAUTION: These dynamic arrays are allocated and expanding on the default allocator
 	ha.init(&plot.data)
 
 	plot.color_background = color_background
@@ -118,8 +111,8 @@ plot_init :: proc(
 	gl.CreateFramebuffers(1, &plot.framebuffer)
 	log.debugf("Created framebuffer: %v", gl.GetError())
 
-	plot.framebuffer_width_max = width
-	plot.framebuffer_height_max = height
+	plot.framebuffer_width_max = buff_width
+	plot.framebuffer_height_max = buff_height
 
 	// Color texture
 	gl.CreateTextures(gl.TEXTURE_2D, 1, &plot.framebuffer_rgb)
@@ -140,7 +133,7 @@ plot_init :: proc(
 	gl.NamedFramebufferTexture(plot.framebuffer, gl.DEPTH_STENCIL_ATTACHMENT, plot.framebuffer_depth, 0)
 	log.debugf("Framebuffer depth: %v", gl.GetError())
 
-	// Creat the vertex buffers for the grid/ui stuff
+	// Create the vertex buffers for the grid/ui stuff
 	gl.GenBuffers(1, &plot.vbo_grid_x)
 	gl.GenBuffers(1, &plot.vbo_grid_y)
 
@@ -150,8 +143,9 @@ plot_init :: proc(
 }
 
 
+// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
+// NOTE: The Dataset does not make or retain a CPU-side copy of the data.
 dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
-	// STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 	// TODO: how does this work if there isn't data available yet? 
 	dataset := Dataset {
 		x = x[:],
@@ -166,12 +160,7 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 		dataset.color = plot.color_graph_default
 
 		// Auto-increment the default color in HSV space
-		hsv := rgb_to_hsv(plot.color_graph_default)
-		hsv[0] += 0.37
-		if hsv[0] > 1.0 {
-			hsv[0] -= 1.0
-		}
-		plot.color_graph_default = hsv_to_rgb(hsv)
+		plot.color_graph_default = hue_increment(plot.color_graph_default)
 	} else {
 		dataset.color = color
 	}
@@ -186,6 +175,7 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 // TODO set of procedures to call to change plot pan & zoom
 // have the user implement how these get called
 
+// Update pointers to CPU data, and send data to the GPU
 dataset_update :: proc {
 	dataset_update_ptr,
 	dataset_update_handle,
@@ -193,7 +183,6 @@ dataset_update :: proc {
 
 
 dataset_update_ptr :: proc(dset: ^Dataset, x, y: []f32) {
-	// Update pointers and send new data to the GPU
 	assert(len(x) == len(y))
 	dset.x = x
 	dset.y = y
@@ -240,10 +229,11 @@ scale_auto_y :: proc(plot: ^Plot) {
 }
 
 
-draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = true) {
-	// STEP 4: Render the Plot to its framebuffer
-	// Displaying the framebuffer is left to the user
-	// PERFORMANCE: This does not need to be called again if nothing in the plot has changed
+// STEP 4: Render the Plot to its framebuffer
+// Displaying the framebuffer is left to the user. Note that this only needs to be
+// called again if something in the plot has changed; otherwise the framebuffer can just
+// be displayed again.
+draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, grid: bool = true) {
 
 	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
 		scale_auto_x(plot)
@@ -253,7 +243,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 	gl.UseProgram(rend.program)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
-	gl.Viewport(0, 0, width, height)
+	gl.Viewport(0, 0, view_width, view_height)
 	gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
@@ -271,13 +261,13 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 			copy(grid_bounds_y[:], plot.range_y[:])
 
 		} else if plot.scale_mode == .Isotropic {
-			ar_pixels := f32(width) / f32(height) // aspect ratio of the available pixels
+			ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
 			ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
 
 			// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
 			if ar_data >= ar_pixels {
-				ratio := (plot.range_x[1] - plot.range_x[0]) / f32(width) // unit per pixel
-				half_height := 0.5 * f32(height) * ratio
+				ratio := (plot.range_x[1] - plot.range_x[0]) / f32(view_width) // unit per pixel
+				half_height := 0.5 * f32(view_height) * ratio
 				average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
 
 				copy(grid_bounds_x[:], plot.range_x[:])
@@ -288,8 +278,8 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, width, height: i32, grid: bool = 
 
 			} else {
 				// if data is taller than the display, use the data to set the height and there is extra empty width
-				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(height)
-				half_width := 0.5 * f32(width) * ratio
+				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
+				half_width := 0.5 * f32(view_width) * ratio
 				average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
 
 				copy(grid_bounds_y[:], plot.range_y[:])
@@ -527,4 +517,17 @@ hsv_to_rgb :: proc(hsv: glm.vec4) -> (rgb: glm.vec4) {
 
 	rgb[3] = hsv[3] // Alpha (0-1)
 	return rgb
+}
+
+
+// Increment the hue of a color. The default increment of 0.37 is selected to
+// generate a series of colors that are generally distinct.
+hue_increment :: proc(rgb_in: glm.vec4, inc: f32 = 0.37) -> glm.vec4 {
+	hsv := rgb_to_hsv(rgb_in)
+	hsv[0] += inc
+	if hsv[0] > 1.0 {
+		hsv[0] -= 1.0
+	}
+	rgb_out := hsv_to_rgb(hsv)
+	return rgb_out
 }
