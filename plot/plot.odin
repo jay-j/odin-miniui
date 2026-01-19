@@ -7,6 +7,7 @@ import glm "core:math/linalg/glsl"
 import "core:slice"
 import "core:testing"
 import gl "vendor:OpenGL"
+import font "vendor:fontstash"
 
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
@@ -22,14 +23,20 @@ Plot_Scale_Mode :: enum {
 
 
 PlotRenderer :: struct {
-	program:  u32,
-	uniforms: map[string]gl.Uniform_Info,
-	vao:      u32,
+	// Line Drawing
+	line_shader:      Shader,
+
+	// Font & Textboxes
+	font_size:        [Textbox_Type]f32, // Default for all plots
+	font_ctx:         font.FontContext,
+	font_shader:      Shader,
+	font_texture_id:  u32,
+	font_atlas_dirty: bool,
 }
 
 
 Plot :: struct {
-	framebuffer_dirty:      bool, // TODO: Implement flagging the framebuffer 
+	framebuffer_dirty:      bool, // TODO: Implement flagging the framebuffer
 	framebuffer:            u32,
 	framebuffer_rgb:        u32,
 	framebuffer_depth:      u32,
@@ -55,6 +62,10 @@ Plot :: struct {
 	// Using the same shader to draw grid elements, so we need VBOs
 	vbo_grid_x:             u32,
 	vbo_grid_y:             u32,
+
+	// Text information
+	font_size:              [Textbox_Type]f32,
+	textboxes:              [dynamic]Textbox,
 }
 
 
@@ -66,6 +77,7 @@ Dataset :: struct {
 	color:  glm.vec4,
 	vbo_x:  u32,
 	vbo_y:  u32,
+	label:  string,
 	// TODO: is it more performant to cache max/min or to compute on demand?
 }
 
@@ -79,15 +91,17 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 	rend = new(PlotRenderer)
 
 	program_ok: bool
-	rend.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
+	rend.line_shader.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
 	if !program_ok {
 		panic("failed to create GLSL program for Plot rendering.")
 	}
-	gl.UseProgram(rend.program)
+	gl.UseProgram(rend.line_shader.program)
 
-	rend.uniforms = gl.get_uniforms_from_program(rend.program)
+	rend.line_shader.uniforms = gl.get_uniforms_from_program(rend.line_shader.program)
 
-	gl.GenVertexArrays(1, &rend.vao)
+	gl.GenVertexArrays(1, &rend.line_shader.vao)
+
+	render_init_font(rend)
 
 	return rend
 }
@@ -139,17 +153,23 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 
 	plot.color_graph_default = {0, 0.9, 0.9, 1.0}
 
+	// BUG: Default font sizes from the renderer are not being passed to every plot
+	plot.font_size = FONT_SIZE_DEFAULT
+
+	append(&plot.textboxes, Textbox{type = .NONE, text = "Hello World"})
+
 	return plot
 }
 
 
 // STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 // NOTE: The Dataset does not make or retain a CPU-side copy of the data.
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
-	// TODO: how does this work if there isn't data available yet? 
+dataset_add :: proc(plot: ^Plot, x, y: []f32, label: string = "", color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
+	// TODO: how does this work if there isn't data available yet?
 	dataset := Dataset {
-		x = x[:],
-		y = y[:],
+		x     = x[:],
+		y     = y[:],
+		label = label,
 	}
 
 	gl.GenBuffers(1, &dataset.vbo_x)
@@ -238,9 +258,10 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
 		scale_auto_x(plot)
 		scale_auto_y(plot)
+		log.debugf("Calculated plot range: x=%v, y=%v", plot.range_x, plot.range_y)
 	}
 
-	gl.UseProgram(rend.program)
+	gl.UseProgram(rend.line_shader.program)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
 	gl.Viewport(0, 0, view_width, view_height)
@@ -252,6 +273,35 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	grid_bounds_x: [2]f32
 	grid_bounds_y: [2]f32
 
+	// Plot coordinates -> Normalized OpenGL Coordinates
+	proj_isotropic: glm.mat4x4
+	{
+		ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
+		ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
+
+		// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
+		if ar_data >= ar_pixels {
+			ratio := (plot.range_x[1] - plot.range_x[0]) / f32(view_width) // unit per pixel
+			half_height := 0.5 * f32(view_height) * ratio
+			average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
+
+			copy(grid_bounds_x[:], plot.range_x[:])
+			grid_bounds_y = {average_height - half_height, average_height + half_height}
+
+			proj_isotropic = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
+		} else {
+			// if data is taller than the display, use the data to set the height and there is extra empty width
+			ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
+			half_width := 0.5 * f32(view_width) * ratio
+			average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
+
+			copy(grid_bounds_y[:], plot.range_y[:])
+			grid_bounds_x = {average_width - half_width, average_width + half_width}
+
+			proj_isotropic = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+		}
+	}
+
 	// calculate and set transform uniform
 	{
 		proj: glm.mat4x4
@@ -261,40 +311,15 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 			copy(grid_bounds_y[:], plot.range_y[:])
 
 		} else if plot.scale_mode == .Isotropic {
-			ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
-			ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
-
-			// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
-			if ar_data >= ar_pixels {
-				ratio := (plot.range_x[1] - plot.range_x[0]) / f32(view_width) // unit per pixel
-				half_height := 0.5 * f32(view_height) * ratio
-				average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
-
-				copy(grid_bounds_x[:], plot.range_x[:])
-				grid_bounds_y = {average_height - half_height, average_height + half_height}
-
-				proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
-
-
-			} else {
-				// if data is taller than the display, use the data to set the height and there is extra empty width
-				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
-				half_width := 0.5 * f32(view_width) * ratio
-				average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
-
-				copy(grid_bounds_y[:], plot.range_y[:])
-				grid_bounds_x = {average_width - half_width, average_width + half_width}
-
-				proj = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
-			}
+			proj = proj_isotropic
 		}
 
-		flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down 
+		flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
 		u_transform: glm.mat4x4 = flip_view * proj
-		gl.UniformMatrix4fv(rend.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
+		gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
 	}
 
-	gl.BindVertexArray(rend.vao)
+	gl.BindVertexArray(rend.line_shader.vao)
 
 	// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
 	dz: f32 = 1.0 / (3 + f32(plot.data.num))
@@ -309,8 +334,8 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
 		// set color uniform
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &dataset.color[0])
-		gl.Uniform1f(rend.uniforms["z"].location, z)
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
+		gl.Uniform1f(rend.line_shader.uniforms["z"].location, z)
 		z += dz
 
 		// link these VBOs to this ARRAY_BUFFER
@@ -325,6 +350,9 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 		// draw with the offset
 		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
 	}
+
+	// BUG: Draw all the text labels for the plot
+	draw_text(rend, plot, proj_isotropic)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
@@ -362,8 +390,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 	{
 		// Draw minor lines / full grid
 		zdepth += dz
-		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_minor[0])
+		gl.Uniform1f(rend.line_shader.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &plot.color_annotation_minor[0])
 
 		// HACK: Hardcoded the origin mark is the first 4 vertices
 		gl.DrawArrays(gl.LINES, 4, cast(i32)len(grid_x) - 4)
@@ -372,8 +400,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 	// Draw major lines over top
 	{
 		zdepth += dz
-		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_major[0])
+		gl.Uniform1f(rend.line_shader.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &plot.color_annotation_major[0])
 		// HACK: Hardcoded the origin mark is the first 4 vertices
 		gl.DrawArrays(gl.LINES, 0, 4)
 	}
@@ -403,8 +431,13 @@ calculate_grid :: proc(bounds: [2]f32, bounds_static: [2]f32, draw_inc: ^[dynami
 }
 
 
+render_destroy :: proc(rend: ^PlotRenderer) {
+	// BUG: What other actions should be done?
+	font.Destroy(&rend.font_ctx)
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
-// 
+//
 
 shader_line_vertex: string = `
     #version 330 core

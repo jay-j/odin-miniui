@@ -45,7 +45,7 @@ main :: proc() {
 	x := linspace(-1.5, 2, 1024)
 	y := make([]f32, len(x))
 	for i in 0 ..< len(x) {
-		y[i] = 0.9 * math.sin(4 * x[i])
+		y[i] = 1.1 * math.sin(4 * x[i])
 	}
 	th := linspace(0.1, 40, 1e4)
 	x2 := make([]f32, len(th))
@@ -64,11 +64,14 @@ main :: proc() {
 	plot_renderer := plt.render_init()
 
 	plot := plt.plot_init(1920, 1080)
+	append(&plot.textboxes, plt.Textbox{type = .TITLE, text = "plot title here", pos = {0, 0.8}})
+	append(&plot.textboxes, plt.Textbox{type = .LABEL_X, text = "x_label (m)", pos = {0.8, 0}})
+	append(&plot.textboxes, plt.Textbox{type = .NONE, text = "+", pos = {1.0, 1.0}})
 
 	sine := plt.dataset_add(&plot, x[:], y[:])
 	sine2 := plt.dataset_add(&plot, x[:], y3[:])
 
-	spiral := plt.dataset_add(&plot, x2[:], y2[:])
+	spiral := plt.dataset_add(&plot, x2[:], y2[:], label = "spiral")
 	{
 		// Handles are used to identify datasets rather than pointers for stability.
 		// The get_ptr() procedure can be used when direct access is required.

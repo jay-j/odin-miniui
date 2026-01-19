@@ -49,6 +49,7 @@ init :: proc(allocator := context.allocator) -> ^Gui {
 	return gui
 }
 
+
 // Once the frame is built and ready to draw, call this to active the right shader.
 draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 
@@ -466,4 +467,3 @@ shader_3D_fragment: string = `
         }
     }
 `
-
