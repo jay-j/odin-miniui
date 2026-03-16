@@ -1070,12 +1070,13 @@ update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 	}
 }
 
-text :: proc(ctx: ^Context, text: string) {
+text :: proc(ctx: ^Context, text: string, bg_color := Color{0, 0, 0, 0}) {
 	text := text
 	font := ctx.style.font
 	color := ctx.style.colors[.TEXT]
 	layout_begin_column(ctx)
 	layout_row(ctx, {-1}, ctx.text_height(font))
+
 	for len(text) > 0 {
 		w: i32
 		start: int
@@ -1096,6 +1097,9 @@ text :: proc(ctx: ^Context, text: string) {
 				}
 				start = i + 1
 			}
+		}
+		if bg_color.a != 0 {
+			draw_rect(ctx, r, bg_color)
 		}
 		draw_text(ctx, font, text[:end], Vec2{r.x, r.y}, color)
 		text = text[end:]
