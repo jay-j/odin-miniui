@@ -1,5 +1,6 @@
 package miniui
 import "core:fmt"
+import "core:math"
 import glm "core:math/linalg/glsl"
 import gl "vendor:OpenGL"
 import SDL "vendor:sdl2"
@@ -128,6 +129,7 @@ gpu_render_texture :: proc(
 
 	// Only change what texture the GPU is looking at as needed
 	if gui.last_texture_id != tex.texture_id {
+		// TODO only draw_flush if len(vertices) > 0
 		draw_flush(gui, vertices, indices) // TODO can this be removed even though texture is changing?
 		gl.BindTexture(gl.TEXTURE_2D, tex.texture_id)
 		gui.last_texture_id = tex.texture_id
@@ -193,30 +195,32 @@ gpu_render_texture :: proc(
 
 	// This is inverse tinting... so giving color=0 will just cause color not to change? // TODO check the shader too
 	v_color: glm.vec4 = {1.0 - f32(color.r) / 255.0, 1.0 - f32(color.g) / 255.0, 1.0 - f32(color.b) / 255.0, 1.0 - f32(color.a) / 255.0}
-	zpos: f32 = 1
+	zpos: f32 = 0
 
 	// TODO this is hardcoded to be looking at the default texture atlas!
 	// PERFORMANCE: store inv_window_dims in the context; only cast and divide once per frame
 	// PERFORMANCE: float and inverted dimensions of the texture?
 
+
+	// BUG and also have it calculate the relative UV coordinates
 	v_left_top: Vertex = {
-		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x), f32(dst.y), zpos},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 	v_left_bottom: Vertex = {
-		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x), f32(dst.y + dst.h), zpos},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_bottom: Vertex = {
-		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y + dst.h), zpos},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 
 	v_right_top: Vertex = {
-		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y), zpos},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
@@ -239,17 +243,10 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 	gl.BufferData(gl.ARRAY_BUFFER, len(vertices) * size_of(vertices[0]), raw_data(vertices^), gl.DYNAMIC_DRAW)
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices) * size_of(indices[0]), raw_data(indices^), gl.DYNAMIC_DRAW)
 
-	{
-		// PERFORMANCE: Send the uniform less frequently
-		// Flip to +Z up but otherwise boring
-		tf := glm.mat4{1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1}
-
-		proj := glm.mat4Ortho3d(-1, 1, -1, 1, 0.1, 100) // half widths, half heights, near, far
-		view := glm.mat4LookAt({0, 0, 2}, {0, 0, 0}, {0, 1, 0}) // eye location, what to look at, up vector
-		u_transform := proj * view * tf
-
-		gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
-	}
+	// Use an orthographic projection directly in window pixel space
+	u_transform := glm.mat4Ortho3d(0, f32(gui.window_width), f32(gui.window_height), 0, -1.0, 1.0)
+	gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
+	// PERFORMANCE: Send the uniform less frequently
 
 	gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
 
@@ -307,7 +304,9 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			// TODO rewrite to draw a tinted quad and be able to just add this as another
 			// quad to be drawn by the GPU program; right now this is a lot of GPU calls!
 			gl.Enable(gl.SCISSOR_TEST)
+			// BUG this limit seems backwards, indicating other stuff may still be backwards
 			gl.Scissor(cmd.rect.x, gui.window_height - cmd.rect.y - cmd.rect.h, cmd.rect.w, cmd.rect.h)
+			// gl.Scissor(cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h)
 			gl.ClearColor(f32(cmd.color.r) / 255.0, f32(cmd.color.g) / 255.0, f32(cmd.color.b) / 255.0, f32(cmd.color.a) / 255.0)
 			gl.Clear(gl.COLOR_BUFFER_BIT)
 
@@ -444,7 +443,7 @@ shader_3D_vertex: string = `
     out vec4 v_color;
     out vec2 UV;
     uniform mat4 u_transform;
-    void main() {	
+    void main() {
     	gl_Position = u_transform * vec4(a_position, 1.0);
     	v_color = a_color;
     	UV = vertex_uv;
