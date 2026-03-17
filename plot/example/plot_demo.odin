@@ -57,7 +57,7 @@ main :: proc() {
 
 	y3 := make([]f32, len(x))
 	for i in 0 ..< len(x) {
-		y3[i] = 0.8 * math.cos(3 * x[i])
+		y3[i] = 0.8 * math.sin(3 * x[i]) * 0.2 * math.exp(x[i])
 	}
 
 	// Create the plot resources and send data to the GPU
