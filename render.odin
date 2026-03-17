@@ -297,22 +297,10 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			}
 
 		case ^Command_Rect:
-			// fmt.printf("  rect: %v\n", cmd.color)
-			draw_flush(gui, &vertices, &indices)
-
-			// Temporary set draw bounds nd use gl.Clear() to draw a rectangle
-			// TODO rewrite to draw a tinted quad and be able to just add this as another
-			// quad to be drawn by the GPU program; right now this is a lot of GPU calls!
-			gl.Enable(gl.SCISSOR_TEST)
-			// BUG this limit seems backwards, indicating other stuff may still be backwards
-			gl.Scissor(cmd.rect.x, gui.window_height - cmd.rect.y - cmd.rect.h, cmd.rect.w, cmd.rect.h)
-			// gl.Scissor(cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h)
-			gl.ClearColor(f32(cmd.color.r) / 255.0, f32(cmd.color.g) / 255.0, f32(cmd.color.b) / 255.0, f32(cmd.color.a) / 255.0)
-			gl.Clear(gl.COLOR_BUFFER_BIT)
-
-			// Restore viewport
-			gl.Scissor(0, 0, gui.window_width, gui.window_height)
-			gl.Disable(gl.SCISSOR_TEST)
+			// Use the atlas blank character to draw rectangles without changing shaders or flushing the queue.
+			dst := Rect{cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h}
+			src := default_atlas[DEFAULT_ATLAS_WHITE]
+			gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
 
 		case ^Command_Icon:
 			// fmt.printf("  icon: %v\n", cmd.id)
