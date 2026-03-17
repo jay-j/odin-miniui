@@ -1,9 +1,6 @@
 package miniui
-import "core:fmt"
-import "core:math"
 import glm "core:math/linalg/glsl"
 import gl "vendor:OpenGL"
-import SDL "vendor:sdl2"
 
 Gui :: struct {
 	ctx:             Context,
@@ -118,19 +115,13 @@ gpu_render_texture :: proc(
 ) {
 	// Build and render a textured quad out of two triangles.
 	// src and dst are in units of pixels, because this is what microui is using
-
 	// SDL (and thus microui) coordinates are measured down from the top left corner,
-	// but my screenspace is reasonable OpenGL UV cordiantes are [0,1]; starting in the lower left.
-	// But assume that the image is loaded in memory with Y backwards
-	// p(0,0) g(-1,+1) uv(0,1)                      p(1000,0) g(+1,+1) uv(1,1)
-	//
-	//
-	// p(0,1000) g(-1,-1) uv(0,0)                   p(1000,1000) g(+1,-1) uv(1,0)
 
 	// Only change what texture the GPU is looking at as needed
 	if gui.last_texture_id != tex.texture_id {
-		// TODO only draw_flush if len(vertices) > 0
-		draw_flush(gui, vertices, indices) // TODO can this be removed even though texture is changing?
+		if len(vertices) > 0 {
+			draw_flush(gui, vertices, indices)
+		}
 		gl.BindTexture(gl.TEXTURE_2D, tex.texture_id)
 		gui.last_texture_id = tex.texture_id
 	}
@@ -188,21 +179,13 @@ gpu_render_texture :: proc(
 		return
 	}
 
-
-	// specify vertex position in screenspace coordiantes (assume the camera gets sorted out)
-	// specify vertex UV coordinates based on where to pull from the texture atlas
-	// specify vertex color (tint) based on the mu color
-
-	// This is inverse tinting... so giving color=0 will just cause color not to change? // TODO check the shader too
+	// If the *shader* recieves the color {0}, it will display the image texture un-modified.
+	// So the desired color is inverted before sending it to the shader.
 	v_color: glm.vec4 = {1.0 - f32(color.r) / 255.0, 1.0 - f32(color.g) / 255.0, 1.0 - f32(color.b) / 255.0, 1.0 - f32(color.a) / 255.0}
 	zpos: f32 = 0
 
-	// TODO this is hardcoded to be looking at the default texture atlas!
-	// PERFORMANCE: store inv_window_dims in the context; only cast and divide once per frame
-	// PERFORMANCE: float and inverted dimensions of the texture?
+	// PERFORMANCE: Move UV texture scaling calculation to the GPU also
 
-
-	// BUG and also have it calculate the relative UV coordinates
 	v_left_top: Vertex = {
 		pos = {f32(dst.x), f32(dst.y), zpos},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
@@ -218,7 +201,6 @@ gpu_render_texture :: proc(
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
-
 	v_right_top: Vertex = {
 		pos = {f32(dst.x + dst.w), f32(dst.y), zpos},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
@@ -258,10 +240,8 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 
 // Convert the imgui instructions into GPU vertices, then draw_flush().
 draw :: proc(gui: ^Gui, allocator := context.allocator) {
-	// Build list of quads to be rendered with new UV coordiantes based on pulling from the right
+	// Build list of quads to be rendered with new UV coordiantes based on pulling from the correct
 	// places in the gui texture atlas
-	// The example version of this uses SDL software rendering functions
-
 
 	// Vertex and vertex indices to be submitted to the render pipeline
 	// Recommend the allocator be a temp allocator of some sort
@@ -270,26 +250,20 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
-
 	gl.Enable(gl.TEXTURE_2D)
-	// get information about the current maximum viewport
 
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gui.clip = unclipped_rect
-
-	// fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
 		switch cmd in variant {
 		case ^Command_Text:
-			// fmt.printf("  text: %v\n", cmd.str)
 			// Pull rects from the ui texture atlas
 			dst := Rect{cmd.pos.x, cmd.pos.y, 0, 0}
 			for ch in cmd.str do if ch & 0xc0 != 0x80 {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
-				// fmt.printf("Text color: %v", cmd.color)
 				dst.w = src.w
 				dst.h = src.h
 				gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
@@ -297,20 +271,18 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			}
 
 		case ^Command_Rect:
-			// Use the atlas blank character to draw rectangles without changing shaders or flushing the queue.
+			// Use the atlas blank character to draw rectangles without changing shaders or flushing the quad lists.
 			dst := Rect{cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h}
 			src := default_atlas[DEFAULT_ATLAS_WHITE]
 			gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
 
 		case ^Command_Icon:
-			// fmt.printf("  icon: %v\n", cmd.id)
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
 			gpu_render_texture(gui, &vertices, &indices, Rect{x, y, src.w, src.h}, src, gui.atlas, cmd.color)
 
 		case ^Command_Clip:
-			// fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
 			// Clip information is given in the coordinate system of the entire window.
 			gui.clip = cmd.rect
 
@@ -320,8 +292,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			panic("Graphics drawing encountered mu.Command_Jump!")
 
 		case ^Command_Image:
-			// fmt.printf("  image\n")
-
 			gpu_render_texture(
 				gui,
 				&vertices,
@@ -347,8 +317,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Scissor(0, 0, gui.window_width, gui.window_height)
 }
 
-
-// Draw finish up functions
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Init Functions
