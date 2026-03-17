@@ -60,11 +60,11 @@ draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 
 	// Setup the graphics pipeline vertex attributes
 	gl.EnableVertexAttribArray(0) // pos
-	gl.EnableVertexAttribArray(1) // color tint
-	gl.EnableVertexAttribArray(2) // uv
+	gl.EnableVertexAttribArray(1) // uv
+	gl.EnableVertexAttribArray(2) // color tint
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, pos)) // within the buffer where is position?
-	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, uv))
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, uv))
+	gl.VertexAttribPointer(2, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
 
 	// Bind this texture by default
 	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
@@ -182,27 +182,26 @@ gpu_render_texture :: proc(
 	// If the *shader* recieves the color {0}, it will display the image texture un-modified.
 	// So the desired color is inverted before sending it to the shader.
 	v_color: glm.vec4 = {1.0 - f32(color.r) / 255.0, 1.0 - f32(color.g) / 255.0, 1.0 - f32(color.b) / 255.0, 1.0 - f32(color.a) / 255.0}
-	zpos: f32 = 0
 
 	// PERFORMANCE: Move UV texture scaling calculation to the GPU also
 
 	v_left_top: Vertex = {
-		pos = {f32(dst.x), f32(dst.y), zpos},
+		pos = {f32(dst.x), f32(dst.y)},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 	v_left_bottom: Vertex = {
-		pos = {f32(dst.x), f32(dst.y + dst.h), zpos},
+		pos = {f32(dst.x), f32(dst.y + dst.h)},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_bottom: Vertex = {
-		pos = {f32(dst.x + dst.w), f32(dst.y + dst.h), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y + dst.h)},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_top: Vertex = {
-		pos = {f32(dst.x + dst.w), f32(dst.y), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y)},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
@@ -228,7 +227,8 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 	// Use an orthographic projection directly in window pixel space
 	u_transform := glm.mat4Ortho3d(0, f32(gui.window_width), f32(gui.window_height), 0, -1.0, 1.0)
 	gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
-	// PERFORMANCE: Send the uniform less frequently
+	gl.Uniform1f(gui.shader.uniforms["z"].location, 0.0)
+	// PERFORMANCE: Send the uniforms less frequently
 
 	gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
 
@@ -385,22 +385,23 @@ gpu_init_shader :: proc(gui: ^Gui) {
 // These are basic 3D textured quad shaders. So this may cost some additional GPU calls if the rest
 // of the application is using essentially a second copy of this same shader.
 
-Vertex :: struct {
-	pos: glm.vec3,
-	col: glm.vec4, // tinting
+Vertex :: struct #packed {
+	pos: glm.vec2,
 	uv:  glm.vec2,
+	col: glm.vec4, // tinting
 }
 
 shader_3D_vertex: string = `
     #version 330 core
-    layout(location=0) in vec3 a_position;
-    layout(location=1) in vec4 a_color;
-    layout(location=2) in vec2 vertex_uv;
+    layout(location=0) in vec2 a_position;
+    layout(location=1) in vec2 vertex_uv;
+    layout(location=2) in vec4 a_color;
     out vec4 v_color;
     out vec2 UV;
     uniform mat4 u_transform;
+    uniform float z;
     void main() {
-    	gl_Position = u_transform * vec4(a_position, 1.0);
+    	gl_Position = u_transform * vec4(a_position, z, 1.0);
     	v_color = a_color;
     	UV = vertex_uv;
     }
