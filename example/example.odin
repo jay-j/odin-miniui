@@ -256,7 +256,7 @@ gfx_window_quit :: proc() {
 
 
 app_framerate_control_init :: proc() {
-	app.time_frame_delta_target = 16667 * time.Microsecond
+	app.time_frame_delta_target = 16700 * time.Microsecond
 	app.time_start = time.tick_now()
 }
 
