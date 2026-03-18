@@ -64,6 +64,7 @@ Plot :: struct {
 	vbo_grid_y:             u32,
 
 	// Text information
+	format_str:             [2]string,
 	font_size:              [Textbox_Type]f32,
 	textboxes:              [dynamic]Textbox,
 }
@@ -152,11 +153,11 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	gl.GenBuffers(1, &plot.vbo_grid_y)
 
 	plot.color_graph_default = {0, 0.9, 0.9, 1.0}
+	plot.format_str.x = "%.3f"
+	plot.format_str.y = "%.3f"
 
 	// BUG: Default font sizes from the renderer are not being passed to every plot
 	plot.font_size = FONT_SIZE_DEFAULT
-
-	append(&plot.textboxes, Textbox{type = .NONE, text = "Hello World"})
 
 	return plot
 }
@@ -447,7 +448,7 @@ shader_line_vertex: string = `
     uniform mat4 u_transform;
     uniform vec4 color;
     uniform float z;
-    void main() {	
+    void main() {
     	gl_Position = u_transform * vec4(x, y, z, 1.0);
     	v_color = color;
     }

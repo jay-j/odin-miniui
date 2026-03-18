@@ -102,7 +102,7 @@ main :: proc() {
 				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
-			if mu.window(&gui.ctx, "image here", {760, 200, 300, 300}) {
+			if mu.window(&gui.ctx, "image here", {760, 100, 300, 300}) {
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.layout_row(&gui.ctx, {-1}, 128)
@@ -149,7 +149,7 @@ main :: proc() {
 				}
 			}
 
-			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 400, 300, 300}) {
+			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 300, 500, 500}) {
 				mu.layout_row(&gui.ctx, {-1}, -1)
 				mu.plot(&gui.ctx, &plot, render_cmd = true)
 			}

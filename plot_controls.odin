@@ -2,6 +2,7 @@ package miniui
 
 import "core:fmt"
 import "core:math"
+import "core:strings"
 import plt "plot"
 
 plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options = {.ALIGN_CENTER}) {
@@ -77,17 +78,81 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	}
 
 	// BUG Cuts off long text length
+	// BUG do these need to be made unique to the plot?
 	if popup(ctx, "Plot#Context Menu") {
+		popup_cnt := get_current_container(ctx)
 		if .SUBMIT in button(ctx, "reset zoom") {
 			plt.scale_auto_x(plot)
 			plt.scale_auto_y(plot)
+			popup_cnt.open = false
 		}
 		checkbox(ctx, "Auto X", &plot.scale_auto_x)
 		checkbox(ctx, "Auto Y", &plot.scale_auto_y)
 	}
+
+
+	label_color := Color{220, 220, 220, 255}
+	{
+		// Label the axis limits
+		xplus_str := fmt.tprintf(plot.format_str.x, plot.range_x[1])
+		xplus_px := plot_coords_to_px(plot, r, {plot.range_x[1], 0})
+		if xplus_px.y < r.y {
+			xplus_px.y = r.y
+		} else if xplus_px.y > r.y + r.h {
+			xplus_px.y = r.y + r.h - ctx.text_height(ctx.style.font) - 1
+		}
+		xplus_px.x -= ctx.text_width(ctx.style.font, xplus_str) + 1
+		draw_text(ctx, ctx.style.font, xplus_str, xplus_px, label_color)
+
+		xminus_str := fmt.tprintf(plot.format_str.x, plot.range_x[1])
+		xminus_px := plot_coords_to_px(plot, r, {plot.range_x[0], 0})
+		if xminus_px.y < r.y {
+			xminus_px.y = r.y
+		} else if xminus_px.y > r.y + r.h {
+			xminus_px.y = r.y + r.h - ctx.text_height(ctx.style.font) - 1
+		}
+		xminus_px.x += 1
+		draw_text(ctx, ctx.style.font, xminus_str, xminus_px, label_color)
+
+		yplus_str := fmt.tprintf(plot.format_str.x, plot.range_y[1])
+		yplus_px := plot_coords_to_px(plot, r, {0, plot.range_y[1]})
+		if yplus_px.x < r.x {
+			yplus_px.x = r.x
+		} else if yplus_px.x > r.x + r.w {
+			yplus_px.x = r.x + r.w - ctx.text_width(ctx.style.font, yplus_str) - 1
+		}
+		yplus_px.y += 1
+		draw_text(ctx, ctx.style.font, yplus_str, yplus_px, label_color)
+
+		yminus_str := fmt.tprintf(plot.format_str.x, plot.range_y[0])
+		yminus_px := plot_coords_to_px(plot, r, {0, plot.range_y[0]})
+		if yminus_px.x < r.x {
+			yminus_px.x = r.x
+		} else if yminus_px.x > r.x + r.w {
+			yminus_px.x = r.x + r.w - ctx.text_width(ctx.style.font, yminus_str) - 1
+		}
+		yminus_px.y -= ctx.text_height(ctx.style.font) - 1
+		draw_text(ctx, ctx.style.font, yminus_str, yminus_px, label_color)
+	}
+	{
+		// Draw the coordinates of the mouse cursor location
+		if ctx.hover_id == id {
+			mouse_pos := plot_px_to_coords(plot, r, ctx.mouse_pos)
+			mouse_pos_str := fmt.tprintf(
+				strings.concatenate({"(", plot.format_str[0], ", ", plot.format_str[1], ")"}, context.temp_allocator),
+				mouse_pos.x,
+				mouse_pos.y,
+			)
+			draw_pos := ctx.mouse_pos + {0, -ctx.text_height(ctx.style.font)}
+
+			draw_text(ctx, ctx.style.font, mouse_pos_str, draw_pos, label_color)
+		}
+	}
+
 }
 
 
+// Convert a window-space set of pixels to coordinates within the plot.
 plot_px_to_coords :: proc(plot: ^plt.Plot, px_bounds: Rect, px_abs: Vec2) -> (result: [2]f32) {
 	px_rel_x: f32 = f32(px_abs.x - px_bounds.x) / f32(px_bounds.w)
 	px_rel_y: f32 = f32(px_abs.y - px_bounds.y) / f32(px_bounds.h)
@@ -95,4 +160,15 @@ plot_px_to_coords :: proc(plot: ^plt.Plot, px_bounds: Rect, px_abs: Vec2) -> (re
 	result.x = math.lerp(plot.range_x[0], plot.range_x[1], px_rel_x)
 	result.y = math.lerp(plot.range_y[1], plot.range_y[0], px_rel_y) // px is top-down, plot is bottom-up
 	return result
+}
+
+
+// Convert coordinates within the plot to window-space pixels.
+plot_coords_to_px :: proc(plot: ^plt.Plot, px_bounds: Rect, pos: [2]f32) -> (result: Vec2) {
+	pos_rel_x := (pos.x - plot.range_x[0]) / (plot.range_x[1] - plot.range_x[0])
+	pos_rel_y := (pos.y - plot.range_y[0]) / (plot.range_y[1] - plot.range_y[0])
+
+	result.x = i32(math.lerp(f32(px_bounds.x), f32(px_bounds.x + px_bounds.w), pos_rel_x))
+	result.y = i32(math.lerp(f32(px_bounds.y + px_bounds.h), f32(px_bounds.y), pos_rel_y))
+	return
 }
