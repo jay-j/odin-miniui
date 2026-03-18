@@ -104,7 +104,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		xplus_px.x -= ctx.text_width(ctx.style.font, xplus_str) + 1
 		draw_text(ctx, ctx.style.font, xplus_str, xplus_px, label_color)
 
-		xminus_str := fmt.tprintf(plot.format_str.x, plot.range_x[1])
+		xminus_str := fmt.tprintf(plot.format_str.x, plot.range_x[0])
 		xminus_px := plot_coords_to_px(plot, r, {plot.range_x[0], 0})
 		if xminus_px.y < r.y {
 			xminus_px.y = r.y
