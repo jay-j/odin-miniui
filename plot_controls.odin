@@ -24,8 +24,11 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 
 	if plot.title != "" {
 		layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
-		// TODO align title centered
-		text(ctx, plot.title)
+		rx := layout_next(ctx)
+		draw_pos := Vec2{rx.x + rx.w / 2, rx.y}
+		draw_pos.x -= ctx.text_width(ctx.style.font, plot.title) / 2
+		draw_text(ctx, ctx.style.font, plot.title, draw_pos, label_color)
+
 		plot_height -= ctx.text_height(ctx.style.font)
 	}
 	if plot.axis_labels.x != "" {
@@ -89,6 +92,13 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		} else {
 			open_popup(ctx, "Plot#Context Menu")
 		}
+	}
+
+	if .RIGHT in ctx.mouse_down_bits && ctx.focus_id == id {
+		// draw the RMB box zoom
+		mouse_move := ctx.mouse_pos - mouse_start
+		box := Rect{min(mouse_start.x, ctx.mouse_pos.x), min(mouse_start.y, ctx.mouse_pos.y), abs(mouse_move.x), abs(mouse_move.y)}
+		draw_box(ctx, box, Color{200, 128, 200, 255})
 	}
 
 	// LMB Interactions: Click-to-Drag
