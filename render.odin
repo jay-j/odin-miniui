@@ -1,5 +1,6 @@
 package miniui
 import glm "core:math/linalg/glsl"
+import plt "plot"
 import gl "vendor:OpenGL"
 
 Gui :: struct {
@@ -29,7 +30,7 @@ Shader :: struct {
 
 // Initialize everything to do with the GUI: microui and GPU shaders.
 // CAUTION: bad stuff seems to happen if this is on the stack!
-init :: proc(allocator := context.allocator) -> ^Gui {
+init :: proc(plot: bool = false, allocator := context.allocator) -> ^Gui {
 	context.allocator = allocator
 
 	// Need the result to be used and passed around. Internally calls microui.init()
@@ -43,6 +44,10 @@ init :: proc(allocator := context.allocator) -> ^Gui {
 	gui.ctx.text_height = default_atlas_text_height
 
 	free_all(context.temp_allocator)
+
+	if plot {
+		gui.ctx.plot_renderer = plt.render_init()
+	}
 
 	return gui
 }

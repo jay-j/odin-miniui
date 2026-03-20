@@ -109,7 +109,7 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 
 	gl.GenVertexArrays(1, &rend.line_shader.vao)
 
-	render_init_font(rend)
+	// render_init_font(rend)
 
 	return rend
 }
@@ -360,7 +360,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	}
 
 	// BUG: Draw all the text labels for the plot
-	draw_text(rend, plot, proj_isotropic)
+	// draw_text(rend, plot, proj_isotropic)
 
 	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
@@ -446,7 +446,7 @@ calculate_grid :: proc(
 	best_inc: f32
 	best_count_error := max(f32)
 
-	ITER_LIMIT :: 6
+	ITER_LIMIT :: 8 // TODO 6?
 	for i: int = 0; i < ITER_LIMIT; i += 1 {
 		count_error := abs((range / inc) - count_max)
 
@@ -475,6 +475,7 @@ calculate_grid :: proc(
 		append(draw_static, bounds_static[1])
 		pos_out[mark_idx] = x
 		mark_idx += 1
+		// BUG when up against the MAX_GRID_LABELS limit, too many grid cells are required
 	}
 
 	return
@@ -483,7 +484,7 @@ calculate_grid :: proc(
 
 render_destroy :: proc(rend: ^PlotRenderer) {
 	// BUG: What other actions should be done?
-	font.Destroy(&rend.font_ctx)
+	// font.Destroy(&rend.font_ctx)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

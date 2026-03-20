@@ -20,7 +20,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	plot_with_margins := layout.body
 
 	// Height of the actual pixels that get plotted
-	plot_height := plot_with_margins.h - ctx.style.padding - 3 // HACK -3 to prevent scroll bar
+	plot_height := plot_with_margins.h - ctx.style.padding - 8 // HACK -3 to prevent scroll bar
 	ylabel_width: i32 = 50 // HACK hardcoded
 
 	if plot.title != "" {
