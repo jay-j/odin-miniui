@@ -21,6 +21,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 
 	// Height of the actual pixels that get plotted
 	plot_height := plot_with_margins.h - ctx.style.padding - 3 // HACK -3 to prevent scroll bar
+	ylabel_width: i32 = 50 // HACK hardcoded
 
 	if plot.title != "" {
 		layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
@@ -37,7 +38,11 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	// Subtract range for x axis numeric labels
 	plot_height -= ctx.text_height(ctx.style.font)
 
-	layout_row(ctx, {-1}, plot_height)
+	layout_row(ctx, {ylabel_width, -1}, plot_height)
+
+	// HACK Reserve the layout segment for the y-axis labels, but don't draw them yet
+	r_ylabel := layout_next(ctx)
+
 
 	id := get_id(ctx, uintptr(plot))
 	r := layout_next(ctx)
@@ -186,6 +191,21 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		}
 	}
 	{
+		{ 	// Draw the Y-axis numeric labels
+			for val in plot.grid_y {
+				if math.is_nan(val) {break} 	// HACK Use better small dynamic arrays once available
+				txt := fmt.tprintf(plot.format_str.y, val)
+				draw_pos := plot_coords_to_px(plot, r, {0, val})
+				if draw_pos.y < r_ylabel.y {continue}
+				if draw_pos.y + ctx.text_height(ctx.style.font) > r_ylabel.y + r_ylabel.h {continue}
+				draw_pos.y -= ctx.text_height(ctx.style.font) / 2
+				draw_pos.x = r_ylabel.x + r_ylabel.w // TODO offsets
+				draw_pos.x -= ctx.text_width(ctx.style.font, txt)
+
+				draw_text(ctx, ctx.style.font, txt, draw_pos, label_color)
+			}
+
+		}
 		{ 	// Draw the X-axis numeric labels
 			layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
 			rx := layout_next(ctx)
@@ -195,6 +215,9 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 				txt := fmt.tprintf(plot.format_str.x, val)
 				draw_pos := plot_coords_to_px(plot, r, {val, 0})
 				draw_pos.y = rx.y
+				if draw_pos.x < r.x {continue} 	// HACK using r.x instead of rx.x hints that maybe it's better to change the layout
+				if draw_pos.x > rx.x + rx.w {continue}
+
 				draw_pos.x -= ctx.text_width(ctx.style.font, txt) / 2
 
 				draw_text(ctx, ctx.style.font, txt, draw_pos, label_color)
