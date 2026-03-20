@@ -30,6 +30,4 @@ plt.draw(plot_renderer, &plot, view_width=512, view_height=512)
 # TODO for Minimum Viable Product
 - Text: axis labels, scale, title
 - Legend
-- Helper for conversion between pixels and coordinates
 - Mark plot style (instead of just lines)
-- Remove Miniui dependency from the plotting example.

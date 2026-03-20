@@ -281,7 +281,7 @@ Context :: struct {
 	plot_renderer:                   ^plt.PlotRenderer,
 }
 
-// Stack is a fixed capacity array, with a monitored index "head" position. 
+// Stack is a fixed capacity array, with a monitored index "head" position.
 // The intended operation is to use the push() and pop() to add/remove from this ordered list.
 Stack :: struct($T: typeid, $N: int) {
 	idx:   i32,
@@ -730,7 +730,7 @@ input_sdl_events :: proc(ctx: ^Context, event: SDL.Event) {
 	}
 }
 
-// TODO need to do stuff with ctx.key_pressed_bits and ctx.mouse pressed stuff 
+// TODO need to do stuff with ctx.key_pressed_bits and ctx.mouse pressed stuff
 
 
 /*============================================================================
@@ -1409,7 +1409,7 @@ slider :: proc(
 		}
 	}
 	/* clamp and store value, update res */
-	v = clamp(v, low, high);value^ = v
+	v = clamp(v, low, high); value^ = v
 	if last != v {
 		res += {.CHANGE}
 	}
@@ -1495,7 +1495,7 @@ image_scaled_full :: proc(ctx: ^Context, tex: Texture) {
 
 // Display an image, scaled down to fit within the restrictions of the layout but preserving
 // the aspect ratio of the source image.
-// This variant has an additional argument to not show the the full source texture. For example, in 
+// This variant has an additional argument to not show the the full source texture. For example, in
 // with viewport framebuffer usecases where the currently-active view is smaller than the backing texture.
 image_scaled_partial :: proc(ctx: ^Context, tex: Texture, src: Rect) {
 	aspect_ratio := f32(src.w) / f32(src.h)

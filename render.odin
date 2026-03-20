@@ -277,6 +277,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
 
 		case ^Command_Icon:
+			// CAUTION Don't want to have to switch texture atlas just for these, when text moves to fontstash
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2

@@ -65,6 +65,7 @@ render_init_font :: proc(rend: ^PlotRenderer) {
 	}
 
 	// HACK: Guessing at the atlas dimensions and starting corner
+	// TODO: What if the atlas runs out of space?
 	font.Init(&rend.font_ctx, 1024, 1024, .TOPLEFT)
 	rend.font_ctx.userData = rend
 	rend.font_ctx.callbackUpdate = font_atlas_to_gpu
@@ -91,6 +92,7 @@ draw_text :: proc(rend: ^PlotRenderer, plot: ^Plot, u_transform: glm.mat4x4) {
 
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
+	// PERFORMANCE: How many characters should be reserved here?
 	vertices := make([dynamic]Vertex, 0, 128, allocator = context.temp_allocator)
 	indices := make([dynamic]u16, 0, 128, allocator = context.temp_allocator)
 
@@ -222,6 +224,7 @@ draw_quad_textured :: proc(draw_vertices: ^[dynamic]Vertex, draw_indices: ^[dyna
 	append(draw_vertices, v_left_top, v_left_bottom, v_right_bottom, v_right_top)
 
 	// For each face give the three vertices to use
+	// Counter-clockwise is the winding order for front-facing (visible) triangles
 	append(draw_indices, idx + 0, idx + 1, idx + 2, idx + 0, idx + 2, idx + 3)
 	// BUG: Changing the winding order.. is this a problem?
 	// append(draw_indices, idx + 0, idx + 2, idx + 1, idx + 0, idx + 3, idx + 2)
