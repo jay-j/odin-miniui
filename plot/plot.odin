@@ -65,6 +65,8 @@ Plot :: struct {
 
 	// Text information
 	format_str:             [2]string,
+	title:                  string,
+	axis_labels:            [2]string,
 	font_size:              [Textbox_Type]f32,
 	textboxes:              [dynamic]Textbox,
 }

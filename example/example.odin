@@ -48,6 +48,9 @@ main :: proc() {
 			y[i] = 0.9 * math.sin(4 * x[i])
 		}
 		sine := plt.dataset_add(&plot, x[:], y[:])
+		plot.axis_labels.x = "x-axis label here"
+		plot.axis_labels.y = "y-axis LABEL HERE IN CAPS"
+		plot.title = "big important plot title right here"
 	}
 
 	main_loop: for {

@@ -9,12 +9,39 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	// show the plot with wrappers for the geometry
 	// send mouse interaction
 	// right click for mode control popup menu
+	label_color := Color{220, 220, 220, 255}
 	opt := opt
+
+
+	// Bundle the titles, axis labels, and plot all in one column
+	layout_begin_column(ctx)
+
+	layout := get_layout(ctx)
+	plot_with_margins := layout.body
+
+	// Height of the actual pixels that get plotted
+	plot_height := plot_with_margins.h - ctx.style.padding - 3 // HACK -3 to prevent scroll bar
+
+	if plot.title != "" {
+		layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
+		// TODO align title centered
+		text(ctx, plot.title)
+		plot_height -= ctx.text_height(ctx.style.font)
+	}
+	if plot.axis_labels.x != "" {
+		plot_height -= ctx.text_height(ctx.style.font)
+	}
+
+	layout_row(ctx, {-1}, plot_height)
+
 	id := get_id(ctx, uintptr(plot))
 	r := layout_next(ctx)
 	update_control(ctx, id, r, opt)
 
+
 	// BUG: If the size of the container has changed, then it needs to be re-rendered
+
+	// TODO shrink the size of the image to leave room for labels and titles and stuff
 
 	// TODO Handle scroll wheel zooming
 	render_cmd := render_cmd
@@ -81,7 +108,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	// BUG do these need to be made unique to the plot?
 	if popup(ctx, "Plot#Context Menu") {
 		popup_cnt := get_current_container(ctx)
-		if .SUBMIT in button(ctx, "reset zoom") {
+		if .SUBMIT in button(ctx, "reset view") {
 			plt.scale_auto_x(plot)
 			plt.scale_auto_y(plot)
 			popup_cnt.open = false
@@ -91,9 +118,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	}
 
 
-	label_color := Color{220, 220, 220, 255}
-	{
-		// Label the axis limits
+	{ 	// Label the axis limits
 		xplus_str := fmt.tprintf(plot.format_str.x, plot.range_x[1])
 		xplus_px := plot_coords_to_px(plot, r, {plot.range_x[1], 0})
 		if xplus_px.y < r.y {
@@ -148,6 +173,19 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			draw_text(ctx, ctx.style.font, mouse_pos_str, draw_pos, label_color)
 		}
 	}
+	{
+		// Draw some kind of axis labels
+		// BUG will this be outside the clip limits?
+		if plot.axis_labels.x != "" {
+			layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
+			rx := layout_next(ctx)
+			draw_pos := Vec2{rx.x + rx.w / 2, rx.y}
+			draw_pos.x -= ctx.text_width(ctx.style.font, plot.axis_labels.x) / 2
+
+			draw_text(ctx, ctx.style.font, plot.axis_labels.x, draw_pos, label_color)
+		}
+	}
+	layout_end_column(ctx)
 
 }
 
