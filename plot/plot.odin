@@ -12,6 +12,7 @@ import font "vendor:fontstash"
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MINOR :: glm.vec4{0.2, 0.2, 0.2, 1.0}
+MAX_GRID_LABELS :: 20
 
 // TODO: How to add text labels?
 
@@ -53,6 +54,10 @@ Plot :: struct {
 	scale_mode:             Plot_Scale_Mode,
 	scale_auto_x:           bool,
 	scale_auto_y:           bool,
+
+	// TODO Change these into the new small dynamic arrays once released
+	grid_x:                 [MAX_GRID_LABELS]f32,
+	grid_y:                 [MAX_GRID_LABELS]f32,
 
 	// Pointers (via slice) to the actual data being plotted
 	// A Handle_Array is used to provide dynamic memory while being robust to
@@ -412,13 +417,47 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 
 
 // Given the current view bounds, calculate where the grid lines should be and append verticies to the draw lists.
-calculate_grid :: proc(bounds: [2]f32, bounds_static: [2]f32, draw_inc: ^[dynamic]f32, draw_static: ^[dynamic]f32) -> (inc: f32) {
+calculate_grid :: proc(
+	bounds: [2]f32,
+	bounds_static: [2]f32,
+	draw_inc: ^[dynamic]f32,
+	draw_static: ^[dynamic]f32,
+	count_dynamic_limit: int = 10,
+) -> (
+	inc: f32,
+) {
+	// A small-pixel plot should pass a low value here to generate fewer markers
+	count_max := f32(min(MAX_GRID_LABELS, count_dynamic_limit))
+
 	// TODO: Manually specified grid increment
 	// TODO: Responsive to the number of pixels used to render the plot
 	range := bounds[1] - bounds[0]
 
-	// Power of 10 increments one order of magnitude smaller than the displayed range.
-	inc = math.pow(10, math.floor(math.log10(range) - 1))
+	// Round down to the nearest power of 10. Now these increments will be too fine.
+	inc = range / (count_max)
+	inc = math.pow(10, math.floor(math.log10(inc)))
+
+	// search for the finest "1, 2, 5, 10" divisions that don't exceed the count of lines
+	// double (1 -> 2), 2.5x (2 -> 5), double (5 -> 10).. then cycle repeats
+	multiplier_list := [3]f32{2, 2.5, 2}
+	best_inc: f32
+	best_count_error := max(f32)
+
+	ITER_LIMIT :: 6
+	for i: int = 0; i < ITER_LIMIT; i += 1 {
+		count_error := abs((range / inc) - count_max)
+
+		if count_error < best_count_error {
+			best_inc = inc
+			best_count_error = count_error
+		}
+		inc *= multiplier_list[i % 3]
+	}
+	inc = best_inc
+
+	// TODO:does the origin need any special handling?
+
+	// PERFORMANCE: Just redraw the existing grid instead of recalculating the layout?
 
 	// Calculate the first grid line, round down to the nearest increment
 	// then add until past the max bounds.
