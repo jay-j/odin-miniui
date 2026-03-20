@@ -34,6 +34,8 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	if plot.axis_labels.x != "" {
 		plot_height -= ctx.text_height(ctx.style.font)
 	}
+	// Subtract range for x axis numeric labels
+	plot_height -= ctx.text_height(ctx.style.font)
 
 	layout_row(ctx, {-1}, plot_height)
 
@@ -184,6 +186,21 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		}
 	}
 	{
+		{ 	// Draw the X-axis numeric labels
+			layout_row(ctx, {-1}, ctx.text_height(ctx.style.font))
+			rx := layout_next(ctx)
+
+			for val in plot.grid_x {
+				if math.is_nan(val) {break} 	// HACK Use better small dynamic arrays once available
+				txt := fmt.tprintf(plot.format_str.x, val)
+				draw_pos := plot_coords_to_px(plot, r, {val, 0})
+				draw_pos.y = rx.y
+				draw_pos.x -= ctx.text_width(ctx.style.font, txt) / 2
+
+				draw_text(ctx, ctx.style.font, txt, draw_pos, label_color)
+			}
+		}
+
 		// Draw some kind of axis labels
 		// BUG will this be outside the clip limits?
 		if plot.axis_labels.x != "" {

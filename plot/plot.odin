@@ -334,7 +334,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	z: f32 = -1 + dz
 
 	if grid {
-		draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz)
+		draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz, {view_width, view_height})
 		z += 2 * dz
 	}
 
@@ -366,7 +366,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 }
 
 
-draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y: [2]f32, dz: f32) {
+draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y: [2]f32, dz: f32, pixels: [2]i32) {
 	// PERFORMANCE: only if the view has changed?
 	// TODO: Scale labels
 	zdepth: f32 = -1.0
@@ -381,8 +381,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 		origin_y := []f32{0, 0, grid_bounds_y[0], grid_bounds_y[1]}
 		append(&grid_y, ..origin_y[:])
 	}
-	calculate_grid(grid_bounds_x, grid_bounds_y, &grid_x, &grid_y)
-	calculate_grid(grid_bounds_y, grid_bounds_x, &grid_y, &grid_x)
+	calculate_grid(grid_bounds_x, grid_bounds_y, &grid_x, &grid_y, pixels.x, plot.grid_x[:])
+	calculate_grid(grid_bounds_y, grid_bounds_x, &grid_y, &grid_x, pixels.y, plot.grid_y[:])
 
 	// Upload vertices to draw, to be used for both sets of draw calls
 	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
@@ -422,11 +422,14 @@ calculate_grid :: proc(
 	bounds_static: [2]f32,
 	draw_inc: ^[dynamic]f32,
 	draw_static: ^[dynamic]f32,
-	count_dynamic_limit: int = 10,
+	pixels: i32,
+	pos_out: []f32,
 ) -> (
 	inc: f32,
 ) {
 	// A small-pixel plot should pass a low value here to generate fewer markers
+	// HACK: Heuristic for labels per pixel. Consider measuring based on the format string. Different for x vs. y
+	count_dynamic_limit := pixels / 50
 	count_max := f32(min(MAX_GRID_LABELS, count_dynamic_limit))
 
 	// TODO: Manually specified grid increment
@@ -459,6 +462,9 @@ calculate_grid :: proc(
 
 	// PERFORMANCE: Just redraw the existing grid instead of recalculating the layout?
 
+	slice.fill(pos_out, math.nan_f32())
+	mark_idx: int = 0
+
 	// Calculate the first grid line, round down to the nearest increment
 	// then add until past the max bounds.
 	grid_first := math.floor(bounds[0] / inc) * inc
@@ -467,6 +473,8 @@ calculate_grid :: proc(
 		append(draw_inc, x)
 		append(draw_static, bounds_static[0])
 		append(draw_static, bounds_static[1])
+		pos_out[mark_idx] = x
+		mark_idx += 1
 	}
 
 	return
