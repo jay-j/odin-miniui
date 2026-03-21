@@ -227,6 +227,22 @@ dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []
 }
 
 
+// Copy updated data from the same CPU memory locations to the GPU
+dataset_update_same_pointers :: proc(plot: ^Plot, dset_handle: Dataset_Handle) {
+	ptr := ha.get_ptr(plot.data, dset_handle)
+	dataset_update_ptr(ptr, ptr.x, ptr.y)
+}
+
+
+// Update all datasets for this plot, coming from their same CPU pointers
+dataset_update_same_pointers_all :: proc(plot: ^Plot) {
+	dataset_iter := ha.make_iter(plot.data)
+	for dset in ha.iter_ptr(&dataset_iter) {
+		dataset_update_ptr(dset, dset.x, dset.y)
+	}
+}
+
+
 scale_auto_x :: proc(plot: ^Plot) {
 	low: f32 = max(f32)
 	high: f32 = min(f32)
