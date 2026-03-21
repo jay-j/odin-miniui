@@ -513,7 +513,6 @@ calculate_grid :: proc(
 		append(draw_static, bounds_static[1])
 		pos_out[mark_idx] = x
 		mark_idx += 1
-		// BUG when up against the MAX_GRID_LABELS limit, too many grid cells are required
 	}
 
 	return

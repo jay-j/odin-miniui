@@ -42,6 +42,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	layout_row(ctx, {ylabel_width, -1}, plot_height)
 
 	// HACK Reserve the layout segment for the y-axis labels, but don't draw them yet
+	// BUG actually draw the text for the y axis descriptive label
 	r_ylabel := layout_next(ctx)
 
 	id := ctx.id_stack.items[ctx.id_stack.idx - 1]
@@ -125,7 +126,8 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		plot.animation_timer = 0
 	}
 
-	// BUG Cuts off long text length
+	// WARNING: Since containers don't automatically expand to fit their content,
+	// long labels will get cutoff unless the popup is manually expanded.
 	if popup(ctx, popup_title) {
 		popup_cnt := get_current_container(ctx)
 		if .SUBMIT in button(ctx, "reset view") {
@@ -133,9 +135,12 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			plt.scale_auto_y(plot)
 			popup_cnt.open = false
 		}
-		// BUG These hold the range but don't trigger new auto-scaling
-		checkbox(ctx, "Auto X", &plot.scale_auto_x)
-		checkbox(ctx, "Auto Y", &plot.scale_auto_y)
+		if .CHANGE in checkbox(ctx, "Auto X", &plot.scale_auto_x) {
+			if plot.scale_auto_x {plt.scale_auto_x(plot)}
+		}
+		if .CHANGE in checkbox(ctx, "Auto Y", &plot.scale_auto_y) {
+			if plot.scale_auto_y {plt.scale_auto_y(plot)}
+		}
 	}
 
 
