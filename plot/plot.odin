@@ -14,7 +14,11 @@ PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MINOR :: glm.vec4{0.2, 0.2, 0.2, 1.0}
 MAX_GRID_LABELS :: 20
 
-// TODO: How to add text labels?
+// NOTE: These two constants are coupled magic numbers.
+// 0.75^25 = 0.0008; a jump of this fraction is very small.
+PLOT_ZOOM_ANIMATION_ALPHA :: 0.75
+PLOT_ZOOM_ANIMATION_RESET :: 25
+
 
 Plot_Scale_Mode :: enum {
 	Stretched = 0,
@@ -54,6 +58,9 @@ Plot :: struct {
 	scale_mode:             Plot_Scale_Mode,
 	scale_auto_x:           bool,
 	scale_auto_y:           bool,
+	animation_timer:        int,
+	range_x_goal:           [2]f32,
+	range_y_goal:           [2]f32,
 
 	// TODO Change these into the new small dynamic arrays once released
 	grid_x:                 [MAX_GRID_LABELS]f32,
@@ -254,7 +261,8 @@ scale_auto_x :: proc(plot: ^Plot) {
 		low = min(low, slice.min(dataset.x[:]))
 		high = max(high, slice.max(dataset.x[:]))
 	}
-	plot.range_x = {low, high}
+	plot.range_x_goal = {low, high}
+	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
 }
 
 
@@ -269,7 +277,8 @@ scale_auto_y :: proc(plot: ^Plot) {
 		low = min(low, slice.min(dataset.y[:]))
 		high = max(high, slice.max(dataset.y[:]))
 	}
-	plot.range_y = {low, high}
+	plot.range_y_goal = {low, high}
+	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
 }
 
 
@@ -283,6 +292,18 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 		scale_auto_x(plot)
 		scale_auto_y(plot)
 		log.debugf("Calculated plot range: x=%v, y=%v", plot.range_x, plot.range_y)
+	}
+
+	if plot.animation_timer > 0 {
+		alpha: f32 = 0.75
+		plot.range_x = alpha * plot.range_x + (1 - alpha) * plot.range_x_goal
+		plot.range_y = alpha * plot.range_y + (1 - alpha) * plot.range_y_goal
+
+		plot.animation_timer -= 1
+		if plot.animation_timer == 0 {
+			plot.range_x = plot.range_x_goal
+			plot.range_y = plot.range_y_goal
+		}
 	}
 
 	gl.UseProgram(rend.line_shader.program)

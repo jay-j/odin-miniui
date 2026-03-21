@@ -90,10 +90,12 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			drag_end := plot_px_to_coords(plot, r, ctx.mouse_pos)
 
 			if !plot.scale_auto_x {
-				plot.range_x = {min(drag_start[0], drag_end[0]), max(drag_start[0], drag_end[0])}
+				plot.range_x_goal = {min(drag_start[0], drag_end[0]), max(drag_start[0], drag_end[0])}
+				plot.animation_timer = plt.PLOT_ZOOM_ANIMATION_RESET
 			}
 			if !plot.scale_auto_y {
-				plot.range_y = {min(drag_start[1], drag_end[1]), max(drag_start[1], drag_end[1])}
+				plot.range_y_goal = {min(drag_start[1], drag_end[1]), max(drag_start[1], drag_end[1])}
+				plot.animation_timer = plt.PLOT_ZOOM_ANIMATION_RESET
 			}
 
 		} else {
@@ -119,6 +121,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		if !plot.scale_auto_y {
 			plot.range_y += drag_delta.y
 		}
+		plot.animation_timer = 0
 	}
 
 	// BUG Cuts off long text length
@@ -129,6 +132,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			plt.scale_auto_y(plot)
 			popup_cnt.open = false
 		}
+		// BUG These hold the range but don't trigger new auto-scaling
 		checkbox(ctx, "Auto X", &plot.scale_auto_x)
 		checkbox(ctx, "Auto Y", &plot.scale_auto_y)
 	}
