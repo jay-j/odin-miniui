@@ -485,9 +485,10 @@ calculate_grid :: proc(
 
 	ITER_LIMIT :: 8 // TODO 6?
 	for i: int = 0; i < ITER_LIMIT; i += 1 {
-		count_error := abs((range / inc) - count_max)
+		count_approx := range / inc
+		count_error := abs(count_approx - count_max)
 
-		if count_error < best_count_error {
+		if count_error < best_count_error && math.ceil(count_approx) < MAX_GRID_LABELS {
 			best_inc = inc
 			best_count_error = count_error
 		}
