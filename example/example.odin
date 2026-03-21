@@ -5,6 +5,7 @@ package miniui_example
 import mu ".."
 import plt "../plot"
 import "core:fmt"
+import la "core:math/linalg"
 import glm "core:math/linalg/glsl"
 import "core:time"
 import gl "vendor:OpenGL"
@@ -51,6 +52,21 @@ main :: proc() {
 		plot.axis_labels.x = "x-axis label here"
 		plot.axis_labels.y = "y-axis LABEL HERE IN CAPS"
 		plot.title = "big important plot title right here"
+	}
+	plot2 := plt.plot_init(640, 480)
+	{
+		t := linspace(0, 8, 100)
+		x := make([]f32, len(t))
+		y := make([]f32, len(t))
+		for i in 0 ..< len(t) {
+			x[i] = (3 + t[i]) * la.cos(t[i])
+			y[i] = (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
+		}
+
+		plt.dataset_add(&plot2, x[:], y[:])
+		plot2.axis_labels.x = "x-axis2 label here"
+		plot2.axis_labels.y = "y-axis2 LABEL HERE IN CAPS"
+		plot2.title = "big important plot title right here 222"
 	}
 
 	main_loop: for {
@@ -155,6 +171,11 @@ main :: proc() {
 			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 300, 500, 500}) {
 				mu.layout_row(&gui.ctx, {-1}, -1)
 				mu.plot(&gui.ctx, &plot, render_cmd = true)
+			}
+
+			if mu.window(&gui.ctx, "second plot window", {600, 600, 320, 240}) {
+				mu.layout_row(&gui.ctx, {-1}, -1)
+				mu.plot(&gui.ctx, &plot2, render_cmd = true)
 			}
 		}
 

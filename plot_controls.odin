@@ -12,8 +12,8 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	label_color := Color{220, 220, 220, 255}
 	opt := opt
 
-
 	// Bundle the titles, axis labels, and plot all in one column
+	push_id(ctx, uintptr(plot))
 	layout_begin_column(ctx)
 
 	layout := get_layout(ctx)
@@ -43,8 +43,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	// HACK Reserve the layout segment for the y-axis labels, but don't draw them yet
 	r_ylabel := layout_next(ctx)
 
-
-	id := get_id(ctx, uintptr(plot))
+	id := ctx.id_stack.items[ctx.id_stack.idx - 1]
 	r := layout_next(ctx)
 	update_control(ctx, id, r, opt)
 
@@ -82,7 +81,8 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		mouse_start = ctx.mouse_pos
 	}
 
-	if .RIGHT in ctx.mouse_released_bits && ctx.last_id == id {
+	popup_title := "Plot#Context Menu"
+	if .RIGHT in ctx.mouse_released_bits && ctx.hover_id == id {
 		mouse_move := ctx.mouse_pos - mouse_start
 		if math.abs(mouse_move.x) > MOUSE_DRAG_TOLERANCE || math.abs(mouse_move.y) > MOUSE_DRAG_TOLERANCE {
 
@@ -97,7 +97,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			}
 
 		} else {
-			open_popup(ctx, "Plot#Context Menu")
+			open_popup(ctx, popup_title)
 		}
 	}
 
@@ -122,8 +122,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	}
 
 	// BUG Cuts off long text length
-	// BUG do these need to be made unique to the plot?
-	if popup(ctx, "Plot#Context Menu") {
+	if popup(ctx, popup_title) {
 		popup_cnt := get_current_container(ctx)
 		if .SUBMIT in button(ctx, "reset view") {
 			plt.scale_auto_x(plot)
@@ -236,6 +235,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		}
 	}
 	layout_end_column(ctx)
+	pop_id(ctx)
 
 }
 
