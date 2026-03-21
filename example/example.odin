@@ -5,6 +5,7 @@ package miniui_example
 import mu ".."
 import plt "../plot"
 import "core:fmt"
+import "core:log"
 import la "core:math/linalg"
 import glm "core:math/linalg/glsl"
 import "core:time"
@@ -28,6 +29,7 @@ app := App{}
 
 
 main :: proc() {
+	context.logger = log.create_console_logger()
 	gfx_window_setup(1200, 800)
 	defer gfx_window_quit()
 	app_framerate_control_init()

@@ -1,6 +1,7 @@
 package miniui
 
 import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:strings"
 import plt "plot"
@@ -246,6 +247,8 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 
 // Convert a window-space set of pixels to coordinates within the plot.
 plot_px_to_coords :: proc(plot: ^plt.Plot, px_bounds: Rect, px_abs: Vec2) -> (result: [2]f32) {
+	plot_validate_bounds(plot, px_bounds)
+
 	px_rel_x: f32 = f32(px_abs.x - px_bounds.x) / f32(px_bounds.w)
 	px_rel_y: f32 = f32(px_abs.y - px_bounds.y) / f32(px_bounds.h)
 
@@ -257,10 +260,33 @@ plot_px_to_coords :: proc(plot: ^plt.Plot, px_bounds: Rect, px_abs: Vec2) -> (re
 
 // Convert coordinates within the plot to window-space pixels.
 plot_coords_to_px :: proc(plot: ^plt.Plot, px_bounds: Rect, pos: [2]f32) -> (result: Vec2) {
+	plot_validate_bounds(plot, px_bounds)
+
 	pos_rel_x := (pos.x - plot.range_x[0]) / (plot.range_x[1] - plot.range_x[0])
 	pos_rel_y := (pos.y - plot.range_y[0]) / (plot.range_y[1] - plot.range_y[0])
 
 	result.x = i32(math.lerp(f32(px_bounds.x), f32(px_bounds.x + px_bounds.w), pos_rel_x))
 	result.y = i32(math.lerp(f32(px_bounds.y + px_bounds.h), f32(px_bounds.y), pos_rel_y))
 	return
+}
+
+
+@(private)
+plot_validate_bounds :: proc(plot: ^plt.Plot, px_bounds: Rect) {
+	if px_bounds.w > plot.framebuffer_width_max {
+		log.warnf(
+			"Plot %p display width (%v) greater size than framebuffer width (%v), px->coords will be inaccurate.",
+			plot,
+			px_bounds.w,
+			plot.framebuffer_width_max,
+		)
+	}
+	if px_bounds.h > plot.framebuffer_height_max {
+		log.warnf(
+			"Plot %p display height (%v) greater size than framebuffer height (%v), px->coords will be inaccurate.",
+			plot,
+			px_bounds.h,
+			plot.framebuffer_height_max,
+		)
+	}
 }

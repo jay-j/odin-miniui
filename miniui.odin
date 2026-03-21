@@ -1035,7 +1035,7 @@ mouse_over :: proc(ctx: ^Context, rect: Rect) -> bool {
 }
 
 
-// Update variables related to user inputs; hover, mouse
+// Update _id variables related to user inputs; hover, mouse
 update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 	mouseover := mouse_over(ctx, rect)
 
