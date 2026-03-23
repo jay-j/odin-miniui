@@ -52,9 +52,6 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 
 	// BUG: If the size of the container has changed, then it needs to be re-rendered
 
-	// TODO shrink the size of the image to leave room for labels and titles and stuff
-
-	// TODO Handle scroll wheel zooming
 	render_cmd := render_cmd
 
 	plot_texture := Texture {
@@ -140,6 +137,21 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		}
 		if .CHANGE in checkbox(ctx, "Auto Y", &plot.scale_auto_y) {
 			if plot.scale_auto_y {plt.scale_auto_y(plot)}
+		}
+	}
+
+	{ 	// Zoom on scroll wheel around the screen center
+		if ctx.scroll_delta.y != 0 && ctx.hover_id == id {
+			scale := 1.0 + 0.01 * f32(ctx.scroll_delta.y)
+			plot.animation_timer = plt.PLOT_ZOOM_ANIMATION_RESET
+
+			center_x := 0.5 * (plot.range_x[0] + plot.range_x[1])
+			radius_x := 0.5 * (plot.range_x[1] - plot.range_x[0])
+			plot.range_x_goal = center_x + scale * [2]f32{-radius_x, radius_x}
+
+			center_y := 0.5 * (plot.range_y[0] + plot.range_y[1])
+			radius_y := 0.5 * (plot.range_y[1] - plot.range_y[0])
+			plot.range_y_goal = center_y + scale * [2]f32{-radius_y, radius_y}
 		}
 	}
 
