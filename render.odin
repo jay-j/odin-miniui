@@ -317,8 +317,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	// Restore the 3D OpenGL State
 	gl.Disable(gl.TEXTURE_2D)
 	gl.Disable(gl.SCISSOR_TEST)
-	gl.Enable(gl.DEPTH_TEST)
-	gl.Enable(gl.CULL_FACE)
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gl.Scissor(0, 0, gui.window_width, gui.window_height)
 }
