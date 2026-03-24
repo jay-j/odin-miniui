@@ -71,7 +71,8 @@ main :: proc() {
 	sine := plt.dataset_add(&plot, x[:], y[:])
 	sine2 := plt.dataset_add(&plot, x[:], y3[:])
 
-	spiral := plt.dataset_add(&plot, x2[:], y2[:], label = "spiral")
+	// The dataset can be added "empty" and simply updated later; easier if you are expecting to change it per frame
+	spiral := plt.dataset_add_empty(&plot, label = "spiral")
 	{
 		// Handles are used to identify datasets rather than pointers for stability.
 		// The get_ptr() procedure can be used when direct access is required.

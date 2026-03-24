@@ -180,13 +180,17 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 // STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 // NOTE: The Dataset does not make or retain a CPU-side copy of the data.
 dataset_add :: proc(plot: ^Plot, x, y: []f32, label: string = "", color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
-	// TODO: how does this work if there isn't data available yet?
+	dh := dataset_add_empty(plot, label, color)
+	dataset := ha.get_ptr(plot.data, dh)
+	dataset_update(dataset, x, y)
+	return dh
+}
+
+
+dataset_add_empty :: proc(plot: ^Plot, label: string = "", color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
 	dataset := Dataset {
-		x     = x[:],
-		y     = y[:],
 		label = label,
 	}
-
 	gl.GenBuffers(1, &dataset.vbo_x)
 	gl.GenBuffers(1, &dataset.vbo_y)
 
@@ -200,15 +204,16 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, label: string = "", color := glm.v
 		dataset.color = color
 	}
 
-	dataset_update(&dataset, x, y)
-
 	dh := ha.add(&plot.data, dataset)
 
 	return dh
 }
 
-// TODO set of procedures to call to change plot pan & zoom
-// have the user implement how these get called
+
+dataset_is_empty :: #force_inline proc(dset: ^Dataset) -> bool {
+	return dset.x == nil || dset.y == nil
+}
+
 
 // Update pointers to CPU data, and send data to the GPU
 dataset_update :: proc {
@@ -258,6 +263,7 @@ scale_auto_x :: proc(plot: ^Plot) {
 	dataset_iter := ha.make_iter(plot.data)
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
 		low = min(low, slice.min(dataset.x[:]))
 		high = max(high, slice.max(dataset.x[:]))
 	}
@@ -274,6 +280,7 @@ scale_auto_y :: proc(plot: ^Plot) {
 	dataset_iter := ha.make_iter(plot.data)
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
 		low = min(low, slice.min(dataset.y[:]))
 		high = max(high, slice.max(dataset.y[:]))
 	}
@@ -378,6 +385,8 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	dataset_iter := ha.make_iter(plot.data)
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
+
 		// set color uniform
 		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
 		gl.Uniform1f(rend.line_shader.uniforms["z"].location, z)
