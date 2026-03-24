@@ -71,7 +71,6 @@ render_init_font :: proc(rend: ^PlotRenderer) {
 	rend.font_ctx.callbackUpdate = font_atlas_to_gpu
 	font.AddFontPath(&rend.font_ctx, "Liberation Mono", "liberation-mono.ttf")
 	rend.font_atlas_dirty = true
-
 }
 
 
@@ -88,6 +87,7 @@ render_init_font :: proc(rend: ^PlotRenderer) {
 // TODO: How does this fontstash handle multiple sizes??
 
 
+// Draw all the text boxes associated with the given plot
 draw_text :: proc(rend: ^PlotRenderer, plot: ^Plot, u_transform: glm.mat4x4) {
 
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
@@ -179,7 +179,7 @@ draw_text :: proc(rend: ^PlotRenderer, plot: ^Plot, u_transform: glm.mat4x4) {
 
 	// log.debugf("Drawing %v indices", len(indices))
 
-	color := glm.vec4{1.0, 0.2, 0.2, 1.0}
+	color := glm.vec4{1.0, 1, 0.2, 1.0}
 	gl.Uniform4fv(rend.font_shader.uniforms["in_color"].location, 1, &color[0])
 
 	gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
@@ -226,8 +226,6 @@ draw_quad_textured :: proc(draw_vertices: ^[dynamic]Vertex, draw_indices: ^[dyna
 	// For each face give the three vertices to use
 	// Counter-clockwise is the winding order for front-facing (visible) triangles
 	append(draw_indices, idx + 0, idx + 1, idx + 2, idx + 0, idx + 2, idx + 3)
-	// BUG: Changing the winding order.. is this a problem?
-	// append(draw_indices, idx + 0, idx + 2, idx + 1, idx + 0, idx + 3, idx + 2)
 }
 
 
@@ -249,7 +247,6 @@ font_atlas_to_gpu :: proc(data: rawptr, dirtyRect: [4]f32, textureData: rawptr) 
 		type = gl.UNSIGNED_BYTE, // TODO check
 		pixels = raw_data(rend.font_ctx.textureData),
 	)
-	// BUG: If this is not repeated every frame then no text appears
 	rend.font_atlas_dirty = false
 }
 
@@ -285,7 +282,7 @@ shader_2D_vertex: string = `
     out vec2 UV;
     uniform vec4 in_color;
     uniform mat4 u_transform;
-    void main() {	
+    void main() {
     	gl_Position = u_transform * vec4(a_position, -0.5, 1.0);
     	v_color = in_color;
     	UV = vertex_uv;
