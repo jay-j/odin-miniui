@@ -1107,8 +1107,8 @@ text :: proc(ctx: ^Context, text: string, bg_color := Color{0, 0, 0, 0}) {
 	layout_end_column(ctx)
 }
 
-label :: proc(ctx: ^Context, text: string) {
-	draw_control_text(ctx, text, layout_next(ctx), .TEXT)
+label :: proc(ctx: ^Context, text: string, opt := Options{}) {
+	draw_control_text(ctx, text, layout_next(ctx), .TEXT, opt = opt)
 }
 
 
