@@ -1,4 +1,5 @@
 package miniui
+import "core:log"
 import glm "core:math/linalg/glsl"
 import plt "plot"
 import gl "vendor:OpenGL"
@@ -344,6 +345,7 @@ gpu_init_default_atlas :: proc(gui: ^Gui) {
 	gui.atlas = texture_create(0, DEFAULT_ATLAS_WIDTH, DEFAULT_ATLAS_HEIGHT)
 
 	gl.GenTextures(1, &gui.atlas.texture_id)
+	log.debugf("Microui atlas located at texture_id: %v", gui.atlas.texture_id)
 	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
 
 	gl.TexImage2D(

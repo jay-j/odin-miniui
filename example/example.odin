@@ -388,6 +388,8 @@ viewport_init :: proc(width, height: i32) -> (vp: Viewport) {
 viewport_draw_prepare :: proc(vp: ^Viewport, width, height: i32) {
 	gl.UseProgram(0)
 
+	gl.BindTexture(gl.TEXTURE_2D, 0) // Defensive, since this is not to use any textures
+
 	gl.UseProgram(vp.shader.program)
 	gl.BindVertexArray(vp.shader.vao)
 	gl.BindBuffer(gl.ARRAY_BUFFER, vp.shader.vbo)
