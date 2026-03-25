@@ -179,6 +179,11 @@ main :: proc() {
 				mu.layout_row(&gui.ctx, {-1}, -1)
 				mu.plot(&gui.ctx, &plot2, render_cmd = true)
 			}
+
+			if mu.window(&gui.ctx, "legend window", {100, 500, 320, 240}) {
+				mu.layout_row(&gui.ctx, {-1}, -1)
+				mu.plot_draw_legend(&gui.ctx, &plot)
+			}
 		}
 
 		{

@@ -55,11 +55,11 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	render_cmd := render_cmd
 
 	plot_texture := Texture {
-		texture_id = plot.framebuffer_rgb,
-		width      = plot.framebuffer_width_max,
-		height     = plot.framebuffer_height_max,
-		inv_width  = 1.0 / f32(plot.framebuffer_width_max),
-		inv_height = 1.0 / f32(plot.framebuffer_height_max),
+		texture_id = plot.fb.rgb,
+		width      = plot.fb.width_max,
+		height     = plot.fb.height_max,
+		inv_width  = 1.0 / f32(plot.fb.width_max),
+		inv_height = 1.0 / f32(plot.fb.height_max),
 	}
 
 	// Queue the miniui command first so that the desired framebuffer size
@@ -290,20 +290,42 @@ plot_coords_to_px :: proc(plot: ^plt.Plot, px_bounds: Rect, pos: [2]f32) -> (res
 
 @(private)
 plot_validate_bounds :: proc(plot: ^plt.Plot, px_bounds: Rect) {
-	if px_bounds.w > plot.framebuffer_width_max {
+	if px_bounds.w > plot.fb.width_max {
 		log.warnf(
 			"Plot %p display width (%v) greater size than framebuffer width (%v), px->coords will be inaccurate.",
 			plot,
 			px_bounds.w,
-			plot.framebuffer_width_max,
+			plot.fb.width_max,
 		)
 	}
-	if px_bounds.h > plot.framebuffer_height_max {
+	if px_bounds.h > plot.fb.height_max {
 		log.warnf(
 			"Plot %p display height (%v) greater size than framebuffer height (%v), px->coords will be inaccurate.",
 			plot,
 			px_bounds.h,
-			plot.framebuffer_height_max,
+			plot.fb.height_max,
 		)
 	}
+}
+
+
+plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot) {
+	push_id(ctx, uintptr(&plot.fb_legend))
+	r := layout_next(ctx)
+
+	legend_texture := Texture {
+		texture_id = plot.fb_legend.rgb,
+		width      = plot.fb_legend.width_max,
+		height     = plot.fb_legend.height_max,
+		inv_width  = 1.0 / f32(plot.fb_legend.width_max),
+		inv_height = 1.0 / f32(plot.fb_legend.height_max),
+	}
+
+	// NOTE: The framebuffer is already rendered by the plt.draw() call
+	src := Rect{0, 0, min(r.w, legend_texture.width), min(r.h, legend_texture.height)}
+	draw_image(ctx, legend_texture, r, src, color = {255, 255, 255, 255})
+
+	draw_text(ctx, ctx.style.font, "legend be here", {r.x, r.y}, {255, 50, 50, 255})
+
+	pop_id(ctx)
 }

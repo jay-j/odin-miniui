@@ -40,13 +40,19 @@ PlotRenderer :: struct {
 }
 
 
+Framebuffer :: struct {
+	cached:     bool, // Does the framebuffer need to be re-rendered before showing to the user?
+	id:         u32, // The framebuffer to "write" to this framebuffer
+	rgb:        u32, // The texture for "reading" this framebuffer
+	depth:      u32,
+	width_max:  i32,
+	height_max: i32,
+}
+
+
 Plot :: struct {
-	framebuffer_dirty:      bool, // TODO: Implement flagging the framebuffer
-	framebuffer:            u32,
-	framebuffer_rgb:        u32,
-	framebuffer_depth:      u32,
-	framebuffer_width_max:  i32,
-	framebuffer_height_max: i32,
+	fb:                     Framebuffer,
+	fb_legend:              Framebuffer,
 	color_background:       glm.vec4,
 	color_annotation_major: glm.vec4,
 	color_annotation_minor: glm.vec4,
@@ -81,6 +87,11 @@ Plot :: struct {
 	axis_labels:            [2]string,
 	font_size:              [Textbox_Type]f32,
 	textboxes:              [dynamic]Textbox,
+
+	// Legend
+	legend_hidden:          bool,
+	vbo_legend_x:           u32,
+	vbo_legend_y:           u32,
 }
 
 
@@ -137,30 +148,35 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	plot.color_annotation_major = PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR
 	plot.color_annotation_minor = PLOT_DEFAULT_COLOR_ANNOTATION_MINOR
 
-	gl.CreateFramebuffers(1, &plot.framebuffer)
-	log.debugf("Created framebuffer: %v", gl.GetError())
+	framebuffer_setup :: proc(fb: ^Framebuffer, width, height: i32) {
+		gl.CreateFramebuffers(1, &fb.id)
+		log.infof("Created framebuffer id: %v. Errors: %v", fb.id, gl.GetError())
 
-	plot.framebuffer_width_max = buff_width
-	plot.framebuffer_height_max = buff_height
+		fb.width_max = width
+		fb.height_max = height
 
-	// Color texture
-	gl.CreateTextures(gl.TEXTURE_2D, 1, &plot.framebuffer_rgb)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-	log.debugf("Created framebuffer texture: %v", gl.GetError())
+		// Color texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &fb.rgb)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+		log.debugf("Created framebuffer texture: %v", gl.GetError())
 
-	gl.TextureStorage2D(plot.framebuffer_rgb, 1, gl.RGBA8, plot.framebuffer_width_max, plot.framebuffer_height_max)
-	gl.NamedFramebufferTexture(plot.framebuffer, gl.COLOR_ATTACHMENT0, plot.framebuffer_rgb, 0)
-	log.debugf("Setup framebuffer rgb: %v", gl.GetError())
+		gl.TextureStorage2D(fb.rgb, 1, gl.RGBA8, fb.width_max, fb.height_max)
+		gl.NamedFramebufferTexture(fb.id, gl.COLOR_ATTACHMENT0, fb.rgb, 0)
+		log.debugf("Setup framebuffer rgb: %v", gl.GetError())
 
-	// Depth texture
-	gl.CreateTextures(gl.TEXTURE_2D, 1, &plot.framebuffer_depth)
-	gl.TextureStorage2D(plot.framebuffer_depth, 1, gl.DEPTH24_STENCIL8, plot.framebuffer_width_max, plot.framebuffer_height_max)
-	gl.NamedFramebufferTexture(plot.framebuffer, gl.DEPTH_STENCIL_ATTACHMENT, plot.framebuffer_depth, 0)
-	log.debugf("Framebuffer depth: %v", gl.GetError())
+		// Depth texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &fb.depth)
+		gl.TextureStorage2D(fb.depth, 1, gl.DEPTH24_STENCIL8, fb.width_max, fb.height_max)
+		gl.NamedFramebufferTexture(fb.id, gl.DEPTH_STENCIL_ATTACHMENT, fb.depth, 0)
+		log.debugf("Framebuffer depth: %v", gl.GetError())
+	}
+
+	framebuffer_setup(&plot.fb, buff_width, buff_height)
+	framebuffer_setup(&plot.fb_legend, 320, 240) // HACK magic numbers for the legend framebuffer size
 
 	// Create the vertex buffers for the grid/ui stuff
 	gl.GenBuffers(1, &plot.vbo_grid_x)
@@ -169,6 +185,10 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	plot.color_graph_default = {0, 0.9, 0.9, 1.0}
 	plot.format_str.x = "%.3f"
 	plot.format_str.y = "%.3f"
+
+	// Legend stuff
+	gl.GenBuffers(1, &plot.vbo_legend_x)
+	gl.GenBuffers(1, &plot.vbo_legend_y)
 
 	// BUG: Default font sizes from the renderer are not being passed to every plot
 	plot.font_size = FONT_SIZE_DEFAULT
@@ -205,6 +225,9 @@ dataset_add_empty :: proc(plot: ^Plot, label: string = "", color := glm.vec4{0.0
 	}
 
 	dh := ha.add(&plot.data, dataset)
+
+	plot.fb.cached = false
+	plot.fb_legend.cached = false
 
 	return dh
 }
@@ -269,6 +292,7 @@ scale_auto_x :: proc(plot: ^Plot) {
 	}
 	plot.range_x_goal = {low, high}
 	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
+	plot.fb.cached = false
 }
 
 
@@ -286,6 +310,7 @@ scale_auto_y :: proc(plot: ^Plot) {
 	}
 	plot.range_y_goal = {low, high}
 	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
+	plot.fb.cached = false
 }
 
 
@@ -311,104 +336,110 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 			plot.range_x = plot.range_x_goal
 			plot.range_y = plot.range_y_goal
 		}
+		plot.fb.cached = false
 	}
 
 	gl.UseProgram(rend.line_shader.program)
 
-	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
-	gl.Viewport(0, 0, view_width, view_height)
-	gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
-	gl.Clear(gl.COLOR_BUFFER_BIT)
-	gl.Clear(gl.DEPTH_BUFFER_BIT)
+	if !plot.fb.cached {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, plot.fb.id)
+		gl.Viewport(0, 0, view_width, view_height)
+		gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
+		gl.Clear(gl.COLOR_BUFFER_BIT)
+		gl.Clear(gl.DEPTH_BUFFER_BIT)
 
-	// Expand the grid to the view rather than restricting it to the range of data.
-	grid_bounds_x: [2]f32
-	grid_bounds_y: [2]f32
+		// Expand the grid to the view rather than restricting it to the range of data.
+		grid_bounds_x: [2]f32
+		grid_bounds_y: [2]f32
 
-	// Plot coordinates -> Normalized OpenGL Coordinates
-	proj_isotropic: glm.mat4x4
-	{
-		ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
-		ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
+		// Plot coordinates -> Normalized OpenGL Coordinates
+		proj_isotropic: glm.mat4x4
+		{
+			ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
+			ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
 
-		// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
-		if ar_data >= ar_pixels {
-			ratio := (plot.range_x[1] - plot.range_x[0]) / f32(view_width) // unit per pixel
-			half_height := 0.5 * f32(view_height) * ratio
-			average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
+			// if data is wider than the display, use the data to set the pixel ratio width and there is extra empty height
+			if ar_data >= ar_pixels {
+				ratio := (plot.range_x[1] - plot.range_x[0]) / f32(view_width) // unit per pixel
+				half_height := 0.5 * f32(view_height) * ratio
+				average_height: f32 = 0.5 * (plot.range_y[0] + plot.range_y[1])
 
-			copy(grid_bounds_x[:], plot.range_x[:])
-			grid_bounds_y = {average_height - half_height, average_height + half_height}
+				copy(grid_bounds_x[:], plot.range_x[:])
+				grid_bounds_y = {average_height - half_height, average_height + half_height}
 
-			proj_isotropic = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
-		} else {
-			// if data is taller than the display, use the data to set the height and there is extra empty width
-			ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
-			half_width := 0.5 * f32(view_width) * ratio
-			average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
+				proj_isotropic = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
+			} else {
+				// if data is taller than the display, use the data to set the height and there is extra empty width
+				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
+				half_width := 0.5 * f32(view_width) * ratio
+				average_width: f32 = 0.5 * (plot.range_x[0] + plot.range_x[1])
 
-			copy(grid_bounds_y[:], plot.range_y[:])
-			grid_bounds_x = {average_width - half_width, average_width + half_width}
+				copy(grid_bounds_y[:], plot.range_y[:])
+				grid_bounds_x = {average_width - half_width, average_width + half_width}
 
-			proj_isotropic = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
-		}
-	}
-
-	// calculate and set transform uniform
-	{
-		proj: glm.mat4x4
-		if plot.scale_mode == .Stretched {
-			proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
-			copy(grid_bounds_x[:], plot.range_x[:])
-			copy(grid_bounds_y[:], plot.range_y[:])
-
-		} else if plot.scale_mode == .Isotropic {
-			proj = proj_isotropic
+				proj_isotropic = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+			}
 		}
 
-		flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
-		u_transform: glm.mat4x4 = flip_view * proj
-		gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
+		// calculate and set transform uniform
+		{
+			proj: glm.mat4x4
+			if plot.scale_mode == .Stretched {
+				proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+				copy(grid_bounds_x[:], plot.range_x[:])
+				copy(grid_bounds_y[:], plot.range_y[:])
+
+			} else if plot.scale_mode == .Isotropic {
+				proj = proj_isotropic
+			}
+
+			flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
+			u_transform: glm.mat4x4 = flip_view * proj
+			gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
+		}
+
+		gl.BindVertexArray(rend.line_shader.vao)
+
+		// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
+		dz: f32 = 1.0 / (3 + f32(plot.data.num))
+		z: f32 = -1 + dz
+
+		if grid {
+			draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz, {view_width, view_height})
+			z += 2 * dz
+		}
+
+		dataset_iter := ha.make_iter(plot.data)
+
+		for dataset in ha.iter_ptr(&dataset_iter) {
+			if dataset_is_empty(dataset) {continue}
+
+			// set color uniform
+			gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
+			gl.Uniform1f(rend.line_shader.uniforms["z"].location, z)
+			z += dz
+
+			// link these VBOs to this ARRAY_BUFFER
+			gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_x)
+			gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+			gl.EnableVertexAttribArray(0)
+
+			gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_y)
+			gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+			gl.EnableVertexAttribArray(1)
+
+			// draw with the offset
+			gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
+		}
+
+		// BUG: Draw all the text labels for the plot
+		// draw_text(rend, plot, proj_isotropic)
+		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	}
 
-	gl.BindVertexArray(rend.line_shader.vao)
+	plot.fb.cached = true
 
-	// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
-	dz: f32 = 1.0 / (3 + f32(plot.data.num))
-	z: f32 = -1 + dz
-
-	if grid {
-		draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz, {view_width, view_height})
-		z += 2 * dz
-	}
-
-	dataset_iter := ha.make_iter(plot.data)
-
-	for dataset in ha.iter_ptr(&dataset_iter) {
-		if dataset_is_empty(dataset) {continue}
-
-		// set color uniform
-		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
-		gl.Uniform1f(rend.line_shader.uniforms["z"].location, z)
-		z += dz
-
-		// link these VBOs to this ARRAY_BUFFER
-		gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_x)
-		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(0)
-
-		gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_y)
-		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(1)
-
-		// draw with the offset
-		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
-	}
-
-	// BUG: Draw all the text labels for the plot
-	// draw_text(rend, plot, proj_isotropic)
-
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	draw_legend(rend, plot)
 }
 
 
@@ -525,6 +556,60 @@ calculate_grid :: proc(
 	}
 
 	return
+}
+
+
+// Draw the legend in its own little framebuffer but still using the
+// NOTE: Assume the settings and shader program of the main drawing routines are still active; this must be called from within draw()
+draw_legend :: proc(rend: ^PlotRenderer, plot: ^Plot) {
+	if plot.legend_hidden {return}
+	if plot.fb_legend.cached {return} 	// BUG nocheckin
+
+	// activate the legend framebuffer
+	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.fb_legend.id)
+	gl.Viewport(0, 0, plot.fb_legend.width_max, plot.fb_legend.height_max) // TODO also consider rendering smaller than the max framebuffer size
+	gl.ClearColor(0, 0, 0, 0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+
+	// Use an orthographic projection directly in window pixel space
+	u_transform := glm.mat4Ortho3d(0, f32(plot.fb_legend.width_max), f32(plot.fb_legend.height_max), 0, -1.0, 1.0)
+	gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
+
+	gl.BindVertexArray(rend.line_shader.vao)
+
+	// for each dataset draw its routine
+	// use a three part line so points have a chance of showing up more
+	dh := f32(plot.fb_legend.height_max) / f32(plot.data.num + 2) // BUG off by one and end conditions
+	y0 := dh
+
+	dataset_iter := ha.make_iter(plot.data)
+	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
+
+		x := []f32{0, f32(plot.fb_legend.width_max / 2), f32(plot.fb_legend.width_max)}
+		y := []f32{y0, y0, y0}
+		y0 += dh
+
+		// set plot line style uniforms
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
+
+		// PERFORMANCE: Does the attribute setting need to happen for each individual dataset thing?
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_legend_x)
+		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(0)
+		gl.BufferData(gl.ARRAY_BUFFER, len(x) * size_of(x[0]), raw_data(x), gl.STATIC_DRAW)
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_legend_y)
+		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(1)
+		gl.BufferData(gl.ARRAY_BUFFER, len(y) * size_of(y[0]), raw_data(y), gl.STATIC_DRAW)
+
+		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(x))
+	}
+
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	plot.fb_legend.cached = true
 }
 
 
