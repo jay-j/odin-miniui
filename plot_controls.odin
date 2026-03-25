@@ -121,6 +121,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			plot.range_y += drag_delta.y
 		}
 		plot.animation_timer = 0
+		plot.fb.cached = false
 	}
 
 	// WARNING: Since containers don't automatically expand to fit their content,
