@@ -7,7 +7,6 @@ import glm "core:math/linalg/glsl"
 import "core:slice"
 import "core:testing"
 import gl "vendor:OpenGL"
-import font "vendor:fontstash"
 
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
@@ -27,16 +26,10 @@ Plot_Scale_Mode :: enum {
 }
 
 
+// NOTE: A structure to bundle markers, fills, in the future.
 PlotRenderer :: struct {
 	// Line Drawing
-	line_shader:      Shader,
-
-	// Font & Textboxes
-	font_size:        [Textbox_Type]f32, // Default for all plots
-	font_ctx:         font.FontContext,
-	font_shader:      Shader,
-	font_texture_id:  u32,
-	font_atlas_dirty: bool,
+	line_shader: Shader,
 }
 
 
@@ -86,8 +79,6 @@ Plot :: struct {
 	format_str:             [2]string,
 	title:                  string,
 	axis_labels:            [2]string,
-	font_size:              [Textbox_Type]f32,
-	textboxes:              [dynamic]Textbox,
 
 	// Legend
 	legend_hidden:          bool,
@@ -199,9 +190,6 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	// Legend stuff
 	gl.GenBuffers(1, &plot.vbo_legend_x)
 	gl.GenBuffers(1, &plot.vbo_legend_y)
-
-	// BUG: Default font sizes from the renderer are not being passed to every plot
-	plot.font_size = FONT_SIZE_DEFAULT
 
 	return plot
 }
@@ -449,8 +437,6 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 			gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
 		}
 
-		// BUG: Draw all the text labels for the plot
-		// draw_text(rend, plot, proj_isotropic)
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	}
 
@@ -632,13 +618,16 @@ draw_legend :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height, s
 }
 
 
-render_destroy :: proc(rend: ^PlotRenderer) {
-	// BUG: What other actions should be done?
-	// font.Destroy(&rend.font_ctx)
-}
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
+
+Shader :: struct {
+	program:  u32,
+	uniforms: map[string]gl.Uniform_Info,
+	vao:      u32,
+	vbo:      u32,
+	ebo:      u32,
+}
 
 shader_line_vertex: string = `
     #version 330 core
