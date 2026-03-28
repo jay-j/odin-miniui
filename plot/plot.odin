@@ -92,6 +92,7 @@ Plot :: struct {
 	legend_hidden:          bool,
 	vbo_legend_x:           u32,
 	vbo_legend_y:           u32,
+	legend_corner:          Legend_Location,
 }
 
 
@@ -105,6 +106,14 @@ Dataset :: struct {
 	vbo_y:  u32,
 	label:  string,
 	// TODO: is it more performant to cache max/min or to compute on demand?
+}
+
+
+Legend_Location :: enum {
+	Northeast = 0,
+	Southeast,
+	Southwest,
+	Northwest,
 }
 
 

@@ -142,6 +142,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 		if .CHANGE in checkbox(ctx, "Auto Y", &plot.scale_auto_y) {
 			if plot.scale_auto_y {plt.scale_auto_y(plot)}
 		}
+		enum_selector(ctx, &plot.legend_corner)
 	}
 
 	{ 	// Zoom on scroll wheel around the screen center
@@ -316,9 +317,11 @@ plot_validate_bounds :: proc(plot: ^plt.Plot, px_bounds: Rect) {
 
 // Draw the legend within the specified rectangle.
 plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot, r_given: Rect) {
+	if plot.legend_hidden {return}
 	push_id(ctx, uintptr(&plot.fb_legend))
-	// if window(ctx, "legend", r_given, opt = {.NO_FRAME, .NO_RESIZE, .NO_CLOSE, .NO_TITLE}) {
+	defer pop_id(ctx)
 
+	// Calculate dimensions
 	r := r_given
 
 	LEGEND_PADDING :: 2
@@ -340,6 +343,23 @@ plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot, r_given: Rect) {
 	height_per_label := ctx.text_height(ctx.style.font) + ctx.style.spacing
 	r.h = legend_label_quantity * height_per_label + 2 * LEGEND_PADDING
 	r.w = LEGEND_GRAPHIC_WIDTH + legend_text_width + ctx.style.padding
+
+	// If legend covers too much of the figure then don't show it.
+	if r.h * r.w * 2 > r_given.h * r_given.w {
+		return
+	}
+
+	// ASSUME: The incoming coordinates of r_given are for .NORTHWEST
+	switch plot.legend_corner {
+	case .Northwest:
+	case .Northeast:
+		r.x = r_given.x + r_given.w - r.w
+	case .Southeast:
+		r.x = r_given.x + r_given.w - r.w
+		r.y = r_given.y + r_given.h - r.h
+	case .Southwest:
+		r.y = r_given.y + r_given.h - r.h
+	}
 
 	// NOTE: The plot is rendered with an alpha background, this color gives it a background.
 	color_background := Color{u8(plot.color_background.r * 255), u8(plot.color_background.g * 255), u8(plot.color_background.b * 255), 255}
@@ -370,6 +390,4 @@ plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot, r_given: Rect) {
 		draw_text(ctx, ctx.style.font, dset.label, {r.x + LEGEND_GRAPHIC_WIDTH + LEGEND_PADDING, r.y + y}, ctx.style.colors[.TEXT])
 		y += height_per_label
 	}
-	// }
-	pop_id(ctx)
 }
