@@ -15,25 +15,23 @@ A small, portable, immediate-mode UI library written in Odin. (Extended from the
 * Simple layout system
 
 ## Goals / Added Features
-[X] Image elements
-[ ] Read-only mode; grey-out locked controls
-[ ] Support for more specific numeric inputs (integer, not float only)
-[ ] Window docking & tabs
-[ ] Tables
-[ ] Combined "number + label" guie element!
+- [X] Image elements
+- [X] Read-only mode; grey-out locked controls
+- [ ] Support for more specific numeric inputs (integer, not float only)
+- [ ] Window docking & tabs
+- [ ] Tables
+- [ ] Combined "number + label" gui element!
 
 These maybe should be done as some other package:
-[ ] Plots
-[ ] Bezier splines
+- [X] Plots
+- [ ] Bezier splines
 
 
 ## Rendering
-Also added the significant feature of rendering. This library assumes you will externally setup an OpenGL context. The library will setup shaders that it needs to, and has a new set of procedures to implement the rendering when called. The rendering makes a lot of `gl.Scissor()` and `gl.Clear()` calls for pixel-perfect rectangles rather than drawing quads; performance could be probably improved by changing all these to drawn quads. Text, icons, and images are already drawn as quads.
+Also added the significant feature of rendering. This library assumes you will externally setup an OpenGL context. See `project_template` to get going quickly! The library will setup shaders that it needs to, and has a new set of procedures to implement the rendering when called. Everything is now drawn as batched textured quads for performance.
 
 ## Notes
-* This library assumes you are using the latest nightly build or GitHub master of the Odin compiler. Since Odin is still under development this means this library might break in the future. Please create an issue or PR if that happens. 
-* The library expects the user to provide input and handle the resultant
-  drawing commands, it does not do any drawing itself.
+* This library assumes you are using the latest monthly build of the Odin compiler. Since Odin is still under development this means this library might break in the future. Please create an issue or PR if that happens. 
 
 ## License
 This library is free software; you can redistribute it and/or modify it

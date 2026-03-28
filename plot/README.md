@@ -27,7 +27,8 @@ plt.draw(plot_renderer, &plot, view_width=512, view_height=512)
 - A render resolution much larger than the available screen may be used if desired.
 
 
-# TODO for Minimum Viable Product
-- Text: axis labels, scale, title
-- Legend
+# Text
+I'm implementing text-related items at the higher microui/miniui level. So this is not as standalone as I hoped, but better for my sanity.
+
+# Critical To-Do
 - Mark plot style (instead of just lines)
