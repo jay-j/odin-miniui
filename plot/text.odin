@@ -90,6 +90,8 @@ render_init_font :: proc(rend: ^PlotRenderer) {
 // Draw all the text boxes associated with the given plot
 draw_text :: proc(rend: ^PlotRenderer, plot: ^Plot, u_transform: glm.mat4x4) {
 
+	textboxes: []Textbox // BUG placeholder since this system is being removed and overhauled
+
 	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 
 	// PERFORMANCE: How many characters should be reserved here?
@@ -103,7 +105,7 @@ draw_text :: proc(rend: ^PlotRenderer, plot: ^Plot, u_transform: glm.mat4x4) {
 	// BUG: What happens if a glyph isn't found in the atlas?
 
 	// BUG: Must also iterate through the plot labels.. make the legend a separate proc?
-	for tbox in plot.textboxes {
+	for tbox in textboxes {
 		// log.debugf("Queue rendering for textbox: %v", tbox.text)
 		// BUG: Get the desired position correctly. Offset by center or stuff.
 		// TextIterInit() will measure and offset horizontal correctly to center
