@@ -45,7 +45,7 @@ main :: proc() {
 	x := linspace(-1.5, 2, 1024)
 	y := make([]f32, len(x))
 	for i in 0 ..< len(x) {
-		y[i] = 0.9 * math.sin(4 * x[i])
+		y[i] = 1.1 * math.sin(4 * x[i])
 	}
 	th := linspace(0.1, 40, 1e4)
 	x2 := make([]f32, len(th))
@@ -57,18 +57,22 @@ main :: proc() {
 
 	y3 := make([]f32, len(x))
 	for i in 0 ..< len(x) {
-		y3[i] = 0.8 * math.cos(3 * x[i])
+		y3[i] = 0.8 * math.sin(3 * x[i]) * 0.2 * math.exp(x[i])
 	}
 
 	// Create the plot resources and send data to the GPU
 	plot_renderer := plt.render_init()
 
 	plot := plt.plot_init(1920, 1080)
+	append(&plot.textboxes, plt.Textbox{type = .TITLE, text = "plot title here", pos = {0, 0.8}})
+	append(&plot.textboxes, plt.Textbox{type = .LABEL_X, text = "x_label (m)", pos = {0.8, 0}})
+	append(&plot.textboxes, plt.Textbox{type = .NONE, text = "+", pos = {1.0, 1.0}})
 
 	sine := plt.dataset_add(&plot, x[:], y[:])
 	sine2 := plt.dataset_add(&plot, x[:], y3[:])
 
-	spiral := plt.dataset_add(&plot, x2[:], y2[:])
+	// The dataset can be added "empty" and simply updated later; easier if you are expecting to change it per frame
+	spiral := plt.dataset_add_empty(&plot, label = "spiral")
 	{
 		// Handles are used to identify datasets rather than pointers for stability.
 		// The get_ptr() procedure can be used when direct access is required.
@@ -194,7 +198,7 @@ gfx_window_quit :: proc() {
 
 
 app_framerate_control_init :: proc() {
-	app.time_frame_delta_target = 16667 * time.Microsecond
+	app.time_frame_delta_target = 16700 * time.Microsecond
 	app.time_start = time.tick_now()
 }
 

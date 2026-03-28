@@ -11,8 +11,13 @@ import gl "vendor:OpenGL"
 PLOT_DEFAULT_COLOR_BACKGROUND :: glm.vec4{0.05, 0.05, 0.05, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR :: glm.vec4{0.4, 0.5, 0.4, 1.0}
 PLOT_DEFAULT_COLOR_ANNOTATION_MINOR :: glm.vec4{0.2, 0.2, 0.2, 1.0}
+MAX_GRID_LABELS :: 20
 
-// TODO: How to add text labels?
+// NOTE: These two constants are coupled magic numbers.
+// 0.75^25 = 0.0008; a jump of this fraction is very small.
+PLOT_ZOOM_ANIMATION_ALPHA :: 0.75
+PLOT_ZOOM_ANIMATION_RESET :: 25
+
 
 Plot_Scale_Mode :: enum {
 	Stretched = 0,
@@ -21,20 +26,26 @@ Plot_Scale_Mode :: enum {
 }
 
 
+// NOTE: A structure to bundle markers, fills, in the future.
 PlotRenderer :: struct {
-	program:  u32,
-	uniforms: map[string]gl.Uniform_Info,
-	vao:      u32,
+	// Line Drawing
+	line_shader: Shader,
+}
+
+
+Framebuffer :: struct {
+	cached:     bool, // Does the framebuffer need to be re-rendered before showing to the user?
+	id:         u32, // The framebuffer to "write" to this framebuffer
+	rgb:        u32, // The texture for "reading" this framebuffer
+	depth:      u32,
+	width_max:  i32,
+	height_max: i32,
 }
 
 
 Plot :: struct {
-	framebuffer_dirty:      bool, // TODO: Implement flagging the framebuffer 
-	framebuffer:            u32,
-	framebuffer_rgb:        u32,
-	framebuffer_depth:      u32,
-	framebuffer_width_max:  i32,
-	framebuffer_height_max: i32,
+	fb:                     Framebuffer,
+	fb_legend:              Framebuffer,
 	color_background:       glm.vec4,
 	color_annotation_major: glm.vec4,
 	color_annotation_minor: glm.vec4,
@@ -46,6 +57,14 @@ Plot :: struct {
 	scale_mode:             Plot_Scale_Mode,
 	scale_auto_x:           bool,
 	scale_auto_y:           bool,
+	animation_timer:        int,
+	range_x_goal:           [2]f32,
+	range_y_goal:           [2]f32,
+	last_render_size:       [2]i32,
+
+	// TODO Change these into the new small dynamic arrays once released
+	grid_x:                 [MAX_GRID_LABELS]f32,
+	grid_y:                 [MAX_GRID_LABELS]f32,
 
 	// Pointers (via slice) to the actual data being plotted
 	// A Handle_Array is used to provide dynamic memory while being robust to
@@ -55,6 +74,17 @@ Plot :: struct {
 	// Using the same shader to draw grid elements, so we need VBOs
 	vbo_grid_x:             u32,
 	vbo_grid_y:             u32,
+
+	// Text information
+	format_str:             [2]string,
+	title:                  string,
+	axis_labels:            [2]string,
+
+	// Legend
+	legend_hidden:          bool,
+	vbo_legend_x:           u32,
+	vbo_legend_y:           u32,
+	legend_corner:          Legend_Location,
 }
 
 
@@ -66,7 +96,16 @@ Dataset :: struct {
 	color:  glm.vec4,
 	vbo_x:  u32,
 	vbo_y:  u32,
+	label:  string,
 	// TODO: is it more performant to cache max/min or to compute on demand?
+}
+
+
+Legend_Location :: enum {
+	Northeast = 0,
+	Southeast,
+	Southwest,
+	Northwest,
 }
 
 
@@ -79,15 +118,17 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 	rend = new(PlotRenderer)
 
 	program_ok: bool
-	rend.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
+	rend.line_shader.program, program_ok = gl.load_shaders_source(shader_line_vertex, shader_line_fragment)
 	if !program_ok {
 		panic("failed to create GLSL program for Plot rendering.")
 	}
-	gl.UseProgram(rend.program)
+	gl.UseProgram(rend.line_shader.program)
 
-	rend.uniforms = gl.get_uniforms_from_program(rend.program)
+	rend.line_shader.uniforms = gl.get_uniforms_from_program(rend.line_shader.program)
 
-	gl.GenVertexArrays(1, &rend.vao)
+	gl.GenVertexArrays(1, &rend.line_shader.vao)
+
+	// render_init_font(rend)
 
 	return rend
 }
@@ -108,36 +149,47 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	plot.color_annotation_major = PLOT_DEFAULT_COLOR_ANNOTATION_MAJOR
 	plot.color_annotation_minor = PLOT_DEFAULT_COLOR_ANNOTATION_MINOR
 
-	gl.CreateFramebuffers(1, &plot.framebuffer)
-	log.debugf("Created framebuffer: %v", gl.GetError())
+	framebuffer_setup :: proc(fb: ^Framebuffer, width, height: i32) {
+		gl.CreateFramebuffers(1, &fb.id)
+		log.infof("Created framebuffer id: %v. Errors: %v", fb.id, gl.GetError())
 
-	plot.framebuffer_width_max = buff_width
-	plot.framebuffer_height_max = buff_height
+		fb.width_max = width
+		fb.height_max = height
 
-	// Color texture
-	gl.CreateTextures(gl.TEXTURE_2D, 1, &plot.framebuffer_rgb)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TextureParameteri(plot.framebuffer_rgb, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-	log.debugf("Created framebuffer texture: %v", gl.GetError())
+		// Color texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &fb.rgb)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+		gl.TextureParameteri(fb.rgb, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+		log.debugf("Created framebuffer texture: %v", gl.GetError())
 
-	gl.TextureStorage2D(plot.framebuffer_rgb, 1, gl.RGBA8, plot.framebuffer_width_max, plot.framebuffer_height_max)
-	gl.NamedFramebufferTexture(plot.framebuffer, gl.COLOR_ATTACHMENT0, plot.framebuffer_rgb, 0)
-	log.debugf("Setup framebuffer rgb: %v", gl.GetError())
+		gl.TextureStorage2D(fb.rgb, 1, gl.RGBA8, fb.width_max, fb.height_max)
+		gl.NamedFramebufferTexture(fb.id, gl.COLOR_ATTACHMENT0, fb.rgb, 0)
+		log.debugf("Setup framebuffer rgb: %v", gl.GetError())
 
-	// Depth texture
-	gl.CreateTextures(gl.TEXTURE_2D, 1, &plot.framebuffer_depth)
-	gl.TextureStorage2D(plot.framebuffer_depth, 1, gl.DEPTH24_STENCIL8, plot.framebuffer_width_max, plot.framebuffer_height_max)
-	gl.NamedFramebufferTexture(plot.framebuffer, gl.DEPTH_STENCIL_ATTACHMENT, plot.framebuffer_depth, 0)
-	log.debugf("Framebuffer depth: %v", gl.GetError())
+		// Depth texture
+		gl.CreateTextures(gl.TEXTURE_2D, 1, &fb.depth)
+		gl.TextureStorage2D(fb.depth, 1, gl.DEPTH24_STENCIL8, fb.width_max, fb.height_max)
+		gl.NamedFramebufferTexture(fb.id, gl.DEPTH_STENCIL_ATTACHMENT, fb.depth, 0)
+		log.debugf("Framebuffer depth: %v", gl.GetError())
+	}
+
+	framebuffer_setup(&plot.fb, buff_width, buff_height)
+	framebuffer_setup(&plot.fb_legend, 160, 120) // HACK magic numbers for the legend framebuffer size
 
 	// Create the vertex buffers for the grid/ui stuff
 	gl.GenBuffers(1, &plot.vbo_grid_x)
 	gl.GenBuffers(1, &plot.vbo_grid_y)
 
 	plot.color_graph_default = {0, 0.9, 0.9, 1.0}
+	plot.format_str.x = "%.3f"
+	plot.format_str.y = "%.3f"
+
+	// Legend stuff
+	gl.GenBuffers(1, &plot.vbo_legend_x)
+	gl.GenBuffers(1, &plot.vbo_legend_y)
 
 	return plot
 }
@@ -145,13 +197,18 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 
 // STEP 3: Create a Dataset to be plotted, and send the data to the GPU.
 // NOTE: The Dataset does not make or retain a CPU-side copy of the data.
-dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
-	// TODO: how does this work if there isn't data available yet? 
-	dataset := Dataset {
-		x = x[:],
-		y = y[:],
-	}
+dataset_add :: proc(plot: ^Plot, x, y: []f32, label: string = "", color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
+	dh := dataset_add_empty(plot, label, color)
+	dataset := ha.get_ptr(plot.data, dh)
+	dataset_update(dataset, x, y)
+	return dh
+}
 
+
+dataset_add_empty :: proc(plot: ^Plot, label: string = "", color := glm.vec4{0.0, 0.0, 0.0, -1}) -> Dataset_Handle {
+	dataset := Dataset {
+		label = label,
+	}
 	gl.GenBuffers(1, &dataset.vbo_x)
 	gl.GenBuffers(1, &dataset.vbo_y)
 
@@ -165,15 +222,19 @@ dataset_add :: proc(plot: ^Plot, x, y: []f32, color := glm.vec4{0.0, 0.0, 0.0, -
 		dataset.color = color
 	}
 
-	dataset_update(&dataset, x, y)
-
 	dh := ha.add(&plot.data, dataset)
+
+	plot.fb.cached = false
+	plot.fb_legend.cached = false
 
 	return dh
 }
 
-// TODO set of procedures to call to change plot pan & zoom
-// have the user implement how these get called
+
+dataset_is_empty :: #force_inline proc(dset: ^Dataset) -> bool {
+	return dset.x == nil || dset.y == nil
+}
+
 
 // Update pointers to CPU data, and send data to the GPU
 dataset_update :: proc {
@@ -199,6 +260,23 @@ dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []
 }
 
 
+// Copy updated data from the same CPU memory locations to the GPU
+dataset_update_same_pointers :: proc(plot: ^Plot, dset_handle: Dataset_Handle) {
+	ptr := ha.get_ptr(plot.data, dset_handle)
+	dataset_update_ptr(ptr, ptr.x, ptr.y)
+}
+
+
+// Update all datasets for this plot, coming from their same CPU pointers
+dataset_update_same_pointers_all :: proc(plot: ^Plot) {
+	dataset_iter := ha.make_iter(plot.data)
+	for dset in ha.iter_ptr(&dataset_iter) {
+		dataset_update_ptr(dset, dset.x, dset.y)
+	}
+}
+
+AUTO_SCALE_MARGIN :: 1.05
+
 scale_auto_x :: proc(plot: ^Plot) {
 	low: f32 = max(f32)
 	high: f32 = min(f32)
@@ -207,10 +285,13 @@ scale_auto_x :: proc(plot: ^Plot) {
 	dataset_iter := ha.make_iter(plot.data)
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
 		low = min(low, slice.min(dataset.x[:]))
 		high = max(high, slice.max(dataset.x[:]))
 	}
-	plot.range_x = {low, high}
+	plot.range_x_goal = {AUTO_SCALE_MARGIN * low, AUTO_SCALE_MARGIN * high}
+	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
+	plot.fb.cached = false
 }
 
 
@@ -222,10 +303,13 @@ scale_auto_y :: proc(plot: ^Plot) {
 	dataset_iter := ha.make_iter(plot.data)
 
 	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
 		low = min(low, slice.min(dataset.y[:]))
 		high = max(high, slice.max(dataset.y[:]))
 	}
-	plot.range_y = {low, high}
+	plot.range_y_goal = {AUTO_SCALE_MARGIN * low, AUTO_SCALE_MARGIN * high}
+	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
+	plot.fb.cached = false
 }
 
 
@@ -235,32 +319,47 @@ scale_auto_y :: proc(plot: ^Plot) {
 // be displayed again.
 draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, grid: bool = true) {
 
+	if view_width != plot.last_render_size.x || view_height != plot.last_render_size.y {
+		plot.fb.cached = false
+		plot.last_render_size.x = view_width
+		plot.last_render_size.y = view_height
+	}
+
 	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
 		scale_auto_x(plot)
 		scale_auto_y(plot)
+		log.debugf("Calculated plot range: x=%v, y=%v", plot.range_x_goal, plot.range_y_goal)
 	}
 
-	gl.UseProgram(rend.program)
+	if plot.animation_timer > 0 {
+		alpha: f32 = 0.75
+		plot.range_x = alpha * plot.range_x + (1 - alpha) * plot.range_x_goal
+		plot.range_y = alpha * plot.range_y + (1 - alpha) * plot.range_y_goal
 
-	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.framebuffer)
-	gl.Viewport(0, 0, view_width, view_height)
-	gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
-	gl.Clear(gl.COLOR_BUFFER_BIT)
-	gl.Clear(gl.DEPTH_BUFFER_BIT)
+		plot.animation_timer -= 1
+		if plot.animation_timer == 0 {
+			plot.range_x = plot.range_x_goal
+			plot.range_y = plot.range_y_goal
+		}
+		plot.fb.cached = false
+	}
 
-	// Expand the grid to the view rather than restricting it to the range of data.
-	grid_bounds_x: [2]f32
-	grid_bounds_y: [2]f32
+	gl.UseProgram(rend.line_shader.program)
 
-	// calculate and set transform uniform
-	{
-		proj: glm.mat4x4
-		if plot.scale_mode == .Stretched {
-			proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
-			copy(grid_bounds_x[:], plot.range_x[:])
-			copy(grid_bounds_y[:], plot.range_y[:])
+	if !plot.fb.cached {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, plot.fb.id)
+		gl.Viewport(0, 0, view_width, view_height)
+		gl.ClearColor(plot.color_background[0], plot.color_background[1], plot.color_background[2], plot.color_background[3])
+		gl.Clear(gl.COLOR_BUFFER_BIT)
+		gl.Clear(gl.DEPTH_BUFFER_BIT)
 
-		} else if plot.scale_mode == .Isotropic {
+		// Expand the grid to the view rather than restricting it to the range of data.
+		grid_bounds_x: [2]f32
+		grid_bounds_y: [2]f32
+
+		// Plot coordinates -> Normalized OpenGL Coordinates
+		proj_isotropic: glm.mat4x4
+		{
 			ar_pixels := f32(view_width) / f32(view_height) // aspect ratio of the available pixels
 			ar_data: f32 = (plot.range_x[1] - plot.range_x[0]) / (plot.range_y[1] - plot.range_y[0])
 
@@ -273,9 +372,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 				copy(grid_bounds_x[:], plot.range_x[:])
 				grid_bounds_y = {average_height - half_height, average_height + half_height}
 
-				proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
-
-
+				proj_isotropic = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], grid_bounds_y[0], grid_bounds_y[1], 0, 1)
 			} else {
 				// if data is taller than the display, use the data to set the height and there is extra empty width
 				ratio := (plot.range_y[1] - plot.range_y[0]) / f32(view_height)
@@ -285,52 +382,70 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 				copy(grid_bounds_y[:], plot.range_y[:])
 				grid_bounds_x = {average_width - half_width, average_width + half_width}
 
-				proj = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+				proj_isotropic = glm.mat4Ortho3d(grid_bounds_x[0], grid_bounds_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
 			}
 		}
 
-		flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down 
-		u_transform: glm.mat4x4 = flip_view * proj
-		gl.UniformMatrix4fv(rend.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
+		// calculate and set transform uniform
+		{
+			proj: glm.mat4x4
+			if plot.scale_mode == .Stretched {
+				proj = glm.mat4Ortho3d(plot.range_x[0], plot.range_x[1], plot.range_y[0], plot.range_y[1], 0, 1)
+				copy(grid_bounds_x[:], plot.range_x[:])
+				copy(grid_bounds_y[:], plot.range_y[:])
+
+			} else if plot.scale_mode == .Isotropic {
+				proj = proj_isotropic
+			}
+
+			flip_view := glm.mat4{1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1} // flip camera space -Y becasue microui expects things upside down
+			u_transform: glm.mat4x4 = flip_view * proj
+			gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0][0])
+		}
+
+		gl.BindVertexArray(rend.line_shader.vao)
+
+		// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
+		dz: f32 = 1.0 / (3 + f32(plot.data.num))
+		z: f32 = -1 + dz
+
+		if grid {
+			draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz, {view_width, view_height})
+			z += 2 * dz
+		}
+
+		dataset_iter := ha.make_iter(plot.data)
+
+		for dataset in ha.iter_ptr(&dataset_iter) {
+			if dataset_is_empty(dataset) {continue}
+
+			// set color uniform
+			gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
+			gl.Uniform1f(rend.line_shader.uniforms["z"].location, z)
+			z += dz
+
+			// link these VBOs to this ARRAY_BUFFER
+			gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_x)
+			gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+			gl.EnableVertexAttribArray(0)
+
+			gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_y)
+			gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+			gl.EnableVertexAttribArray(1)
+
+			// draw with the offset
+			gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
+		}
+
+		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	}
 
-	gl.BindVertexArray(rend.vao)
+	plot.fb.cached = true
 
-	// OpenGL camera space goes from z=0 (near camera) to -1 (far from camera)
-	dz: f32 = 1.0 / (3 + f32(plot.data.num))
-	z: f32 = -1 + dz
-
-	if grid {
-		draw_grid(rend, plot, grid_bounds_x, grid_bounds_y, dz)
-		z += 2 * dz
-	}
-
-	dataset_iter := ha.make_iter(plot.data)
-
-	for dataset in ha.iter_ptr(&dataset_iter) {
-		// set color uniform
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &dataset.color[0])
-		gl.Uniform1f(rend.uniforms["z"].location, z)
-		z += dz
-
-		// link these VBOs to this ARRAY_BUFFER
-		gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_x)
-		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(0)
-
-		gl.BindBuffer(gl.ARRAY_BUFFER, dataset.vbo_y)
-		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
-		gl.EnableVertexAttribArray(1)
-
-		// draw with the offset
-		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(dataset.x))
-	}
-
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 }
 
 
-draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y: [2]f32, dz: f32) {
+draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y: [2]f32, dz: f32, pixels: [2]i32) {
 	// PERFORMANCE: only if the view has changed?
 	// TODO: Scale labels
 	zdepth: f32 = -1.0
@@ -345,8 +460,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 		origin_y := []f32{0, 0, grid_bounds_y[0], grid_bounds_y[1]}
 		append(&grid_y, ..origin_y[:])
 	}
-	calculate_grid(grid_bounds_x, grid_bounds_y, &grid_x, &grid_y)
-	calculate_grid(grid_bounds_y, grid_bounds_x, &grid_y, &grid_x)
+	calculate_grid(grid_bounds_x, grid_bounds_y, &grid_x, &grid_y, pixels.x, plot.grid_x[:])
+	calculate_grid(grid_bounds_y, grid_bounds_x, &grid_y, &grid_x, pixels.y, plot.grid_y[:])
 
 	// Upload vertices to draw, to be used for both sets of draw calls
 	gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_grid_x)
@@ -362,8 +477,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 	{
 		// Draw minor lines / full grid
 		zdepth += dz
-		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_minor[0])
+		gl.Uniform1f(rend.line_shader.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &plot.color_annotation_minor[0])
 
 		// HACK: Hardcoded the origin mark is the first 4 vertices
 		gl.DrawArrays(gl.LINES, 4, cast(i32)len(grid_x) - 4)
@@ -372,8 +487,8 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 	// Draw major lines over top
 	{
 		zdepth += dz
-		gl.Uniform1f(rend.uniforms["z"].location, zdepth)
-		gl.Uniform4fv(rend.uniforms["color"].location, 1, &plot.color_annotation_major[0])
+		gl.Uniform1f(rend.line_shader.uniforms["z"].location, zdepth)
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &plot.color_annotation_major[0])
 		// HACK: Hardcoded the origin mark is the first 4 vertices
 		gl.DrawArrays(gl.LINES, 0, 4)
 	}
@@ -381,13 +496,54 @@ draw_grid :: proc(rend: ^PlotRenderer, plot: ^Plot, grid_bounds_x, grid_bounds_y
 
 
 // Given the current view bounds, calculate where the grid lines should be and append verticies to the draw lists.
-calculate_grid :: proc(bounds: [2]f32, bounds_static: [2]f32, draw_inc: ^[dynamic]f32, draw_static: ^[dynamic]f32) -> (inc: f32) {
+calculate_grid :: proc(
+	bounds: [2]f32,
+	bounds_static: [2]f32,
+	draw_inc: ^[dynamic]f32,
+	draw_static: ^[dynamic]f32,
+	pixels: i32,
+	pos_out: []f32,
+) -> (
+	inc: f32,
+) {
+	// A small-pixel plot should pass a low value here to generate fewer markers
+	// HACK: Heuristic for labels per pixel. Consider measuring based on the format string. Different for x vs. y
+	count_dynamic_limit := pixels / 50
+	count_max := f32(min(MAX_GRID_LABELS, count_dynamic_limit))
+
 	// TODO: Manually specified grid increment
 	// TODO: Responsive to the number of pixels used to render the plot
 	range := bounds[1] - bounds[0]
 
-	// Power of 10 increments one order of magnitude smaller than the displayed range.
-	inc = math.pow(10, math.floor(math.log10(range) - 1))
+	// Round down to the nearest power of 10. Now these increments will be too fine.
+	inc = range / (count_max)
+	inc = math.pow(10, math.floor(math.log10(inc)))
+
+	// search for the finest "1, 2, 5, 10" divisions that don't exceed the count of lines
+	// double (1 -> 2), 2.5x (2 -> 5), double (5 -> 10).. then cycle repeats
+	multiplier_list := [3]f32{2, 2.5, 2}
+	best_inc: f32
+	best_count_error := max(f32)
+
+	ITER_LIMIT :: 8 // TODO 6?
+	for i: int = 0; i < ITER_LIMIT; i += 1 {
+		count_approx := range / inc
+		count_error := abs(count_approx - count_max)
+
+		if count_error < best_count_error && math.ceil(count_approx) < MAX_GRID_LABELS {
+			best_inc = inc
+			best_count_error = count_error
+		}
+		inc *= multiplier_list[i % 3]
+	}
+	inc = best_inc
+
+	// TODO:does the origin need any special handling?
+
+	// PERFORMANCE: Just redraw the existing grid instead of recalculating the layout?
+
+	slice.fill(pos_out, math.nan_f32())
+	mark_idx: int = 0
 
 	// Calculate the first grid line, round down to the nearest increment
 	// then add until past the max bounds.
@@ -397,14 +553,81 @@ calculate_grid :: proc(bounds: [2]f32, bounds_static: [2]f32, draw_inc: ^[dynami
 		append(draw_inc, x)
 		append(draw_static, bounds_static[0])
 		append(draw_static, bounds_static[1])
+		pos_out[mark_idx] = x
+		mark_idx += 1
 	}
 
 	return
 }
 
 
+// Draw the legend in its own little framebuffer but still using the plotting shader
+// NOTE: Assume the settings and shader program of the main drawing routines are still active; this must be called from within draw()
+draw_legend :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height, spacing: i32) {
+	if plot.legend_hidden {return}
+	if plot.fb_legend.cached {return}
+
+	gl.UseProgram(rend.line_shader.program)
+
+	// activate the legend framebuffer
+	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.fb_legend.id)
+	gl.Viewport(0, 0, view_width, view_height)
+	gl.ClearColor(0.0, 0.0, 0.0, 0.0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+
+	// Use an orthographic projection directly in window pixel space
+	u_transform := glm.mat4Ortho3d(0, f32(view_width), 0, f32(view_height), -1.0, 1.0)
+	gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, raw_data(&u_transform))
+	gl.Uniform1f(rend.line_shader.uniforms["z"].location, -0.5)
+
+	gl.BindVertexArray(rend.line_shader.vao)
+
+	// for each dataset draw a little line using the full plotting shader
+	// use a three part line to enable more sophistocated marker shaders
+	dh := f32(spacing)
+	y0 := dh / 2
+
+	dataset_iter := ha.make_iter(plot.data)
+	for dataset in ha.iter_ptr(&dataset_iter) {
+		if dataset_is_empty(dataset) {continue}
+
+		x := []f32{0, f32(view_width / 2), f32(view_width)}
+		y := []f32{y0, y0, y0}
+		y0 += dh
+
+		// set plot line style uniforms
+		gl.Uniform4fv(rend.line_shader.uniforms["color"].location, 1, &dataset.color[0])
+
+		// PERFORMANCE: Does the attribute setting need to happen for each individual dataset thing?
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_legend_x)
+		gl.VertexAttribPointer(0, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(0)
+		gl.BufferData(gl.ARRAY_BUFFER, len(x) * size_of(x[0]), raw_data(x), gl.STATIC_DRAW)
+
+		gl.BindBuffer(gl.ARRAY_BUFFER, plot.vbo_legend_y)
+		gl.VertexAttribPointer(1, 1, gl.FLOAT, false, 0, uintptr(0))
+		gl.EnableVertexAttribArray(1)
+		gl.BufferData(gl.ARRAY_BUFFER, len(y) * size_of(y[0]), raw_data(y), gl.STATIC_DRAW)
+
+		gl.DrawArrays(gl.LINE_STRIP, 0, cast(i32)len(x))
+	}
+
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	plot.fb_legend.cached = true
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
-// 
+//
+
+Shader :: struct {
+	program:  u32,
+	uniforms: map[string]gl.Uniform_Info,
+	vao:      u32,
+	vbo:      u32,
+	ebo:      u32,
+}
 
 shader_line_vertex: string = `
     #version 330 core
@@ -414,7 +637,7 @@ shader_line_vertex: string = `
     uniform mat4 u_transform;
     uniform vec4 color;
     uniform float z;
-    void main() {	
+    void main() {
     	gl_Position = u_transform * vec4(x, y, z, 1.0);
     	v_color = color;
     }

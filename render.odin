@@ -1,8 +1,8 @@
 package miniui
-import "core:fmt"
+import "core:log"
 import glm "core:math/linalg/glsl"
+import plt "plot"
 import gl "vendor:OpenGL"
-import SDL "vendor:sdl2"
 
 Gui :: struct {
 	ctx:             Context,
@@ -31,7 +31,7 @@ Shader :: struct {
 
 // Initialize everything to do with the GUI: microui and GPU shaders.
 // CAUTION: bad stuff seems to happen if this is on the stack!
-init :: proc(allocator := context.allocator) -> ^Gui {
+init :: proc(plot: bool = false, allocator := context.allocator) -> ^Gui {
 	context.allocator = allocator
 
 	// Need the result to be used and passed around. Internally calls microui.init()
@@ -46,8 +46,13 @@ init :: proc(allocator := context.allocator) -> ^Gui {
 
 	free_all(context.temp_allocator)
 
+	if plot {
+		gui.ctx.plot_renderer = plt.render_init()
+	}
+
 	return gui
 }
+
 
 // Once the frame is built and ready to draw, call this to active the right shader.
 draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
@@ -61,11 +66,11 @@ draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 
 	// Setup the graphics pipeline vertex attributes
 	gl.EnableVertexAttribArray(0) // pos
-	gl.EnableVertexAttribArray(1) // color tint
-	gl.EnableVertexAttribArray(2) // uv
+	gl.EnableVertexAttribArray(1) // uv
+	gl.EnableVertexAttribArray(2) // color tint
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, pos)) // within the buffer where is position?
-	gl.VertexAttribPointer(1, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, uv))
+	gl.VertexAttribPointer(1, 2, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, uv))
+	gl.VertexAttribPointer(2, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
 
 	// Bind this texture by default
 	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
@@ -116,18 +121,13 @@ gpu_render_texture :: proc(
 ) {
 	// Build and render a textured quad out of two triangles.
 	// src and dst are in units of pixels, because this is what microui is using
-
 	// SDL (and thus microui) coordinates are measured down from the top left corner,
-	// but my screenspace is reasonable OpenGL UV cordiantes are [0,1]; starting in the lower left.
-	// But assume that the image is loaded in memory with Y backwards
-	// p(0,0) g(-1,+1) uv(0,1)                      p(1000,0) g(+1,+1) uv(1,1)
-	//
-	//
-	// p(0,1000) g(-1,-1) uv(0,0)                   p(1000,1000) g(+1,-1) uv(1,0)
 
 	// Only change what texture the GPU is looking at as needed
 	if gui.last_texture_id != tex.texture_id {
-		draw_flush(gui, vertices, indices) // TODO can this be removed even though texture is changing?
+		if len(vertices) > 0 {
+			draw_flush(gui, vertices, indices)
+		}
 		gl.BindTexture(gl.TEXTURE_2D, tex.texture_id)
 		gui.last_texture_id = tex.texture_id
 	}
@@ -185,37 +185,29 @@ gpu_render_texture :: proc(
 		return
 	}
 
-
-	// specify vertex position in screenspace coordiantes (assume the camera gets sorted out)
-	// specify vertex UV coordinates based on where to pull from the texture atlas
-	// specify vertex color (tint) based on the mu color
-
-	// This is inverse tinting... so giving color=0 will just cause color not to change? // TODO check the shader too
+	// If the *shader* recieves the color {0}, it will display the image texture un-modified.
+	// So the desired color is inverted before sending it to the shader.
 	v_color: glm.vec4 = {1.0 - f32(color.r) / 255.0, 1.0 - f32(color.g) / 255.0, 1.0 - f32(color.b) / 255.0, 1.0 - f32(color.a) / 255.0}
-	zpos: f32 = 1
 
-	// TODO this is hardcoded to be looking at the default texture atlas!
-	// PERFORMANCE: store inv_window_dims in the context; only cast and divide once per frame
-	// PERFORMANCE: float and inverted dimensions of the texture?
+	// PERFORMANCE: Move UV texture scaling calculation to the GPU also
 
 	v_left_top: Vertex = {
-		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x), f32(dst.y)},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
 	v_left_bottom: Vertex = {
-		pos = {2.0 * f32(dst.x) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x), f32(dst.y + dst.h)},
 		uv  = {f32(src.x) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
 	v_right_bottom: Vertex = {
-		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y + dst.h) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y + dst.h)},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y + src.h) * tex.inv_height},
 		col = v_color,
 	}
-
 	v_right_top: Vertex = {
-		pos = {2.0 * f32(dst.x + dst.w) / f32(gui.window_width) - 1.0, 1.0 - 2.0 * f32(dst.y) / f32(gui.window_height), zpos},
+		pos = {f32(dst.x + dst.w), f32(dst.y)},
 		uv  = {f32(src.x + src.w) * tex.inv_width, f32(src.y) * tex.inv_height},
 		col = v_color,
 	}
@@ -238,17 +230,11 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 	gl.BufferData(gl.ARRAY_BUFFER, len(vertices) * size_of(vertices[0]), raw_data(vertices^), gl.DYNAMIC_DRAW)
 	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices) * size_of(indices[0]), raw_data(indices^), gl.DYNAMIC_DRAW)
 
-	{
-		// PERFORMANCE: Send the uniform less frequently
-		// Flip to +Z up but otherwise boring
-		tf := glm.mat4{1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, -1.0, 0, 0, 0, 0, 1}
-
-		proj := glm.mat4Ortho3d(-1, 1, -1, 1, 0.1, 100) // half widths, half heights, near, far
-		view := glm.mat4LookAt({0, 0, 2}, {0, 0, 0}, {0, 1, 0}) // eye location, what to look at, up vector
-		u_transform := proj * view * tf
-
-		gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
-	}
+	// Use an orthographic projection directly in window pixel space
+	u_transform := glm.mat4Ortho3d(0, f32(gui.window_width), f32(gui.window_height), 0, -1.0, 1.0)
+	gl.UniformMatrix4fv(gui.shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
+	gl.Uniform1f(gui.shader.uniforms["z"].location, 0.0)
+	// PERFORMANCE: Send the uniforms less frequently
 
 	gl.DrawElements(gl.TRIANGLES, i32(len(indices)), gl.UNSIGNED_SHORT, nil)
 
@@ -260,10 +246,8 @@ draw_flush :: proc(gui: ^Gui, vertices: ^[dynamic]Vertex, indices: ^[dynamic]u16
 
 // Convert the imgui instructions into GPU vertices, then draw_flush().
 draw :: proc(gui: ^Gui, allocator := context.allocator) {
-	// Build list of quads to be rendered with new UV coordiantes based on pulling from the right
+	// Build list of quads to be rendered with new UV coordiantes based on pulling from the correct
 	// places in the gui texture atlas
-	// The example version of this uses SDL software rendering functions
-
 
 	// Vertex and vertex indices to be submitted to the render pipeline
 	// Recommend the allocator be a temp allocator of some sort
@@ -272,26 +256,20 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
-
 	gl.Enable(gl.TEXTURE_2D)
-	// get information about the current maximum viewport
 
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gui.clip = unclipped_rect
-
-	// fmt.printf("[UI] Frame Record Start!\n")
 
 	command_backing: ^Command
 	for variant in next_command_iterator(&gui.ctx, &command_backing) {
 		switch cmd in variant {
 		case ^Command_Text:
-			// fmt.printf("  text: %v\n", cmd.str)
 			// Pull rects from the ui texture atlas
 			dst := Rect{cmd.pos.x, cmd.pos.y, 0, 0}
 			for ch in cmd.str do if ch & 0xc0 != 0x80 {
 				r := min(int(ch), 127)
 				src := default_atlas[DEFAULT_ATLAS_FONT + r]
-				// fmt.printf("Text color: %v", cmd.color)
 				dst.w = src.w
 				dst.h = src.h
 				gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
@@ -299,30 +277,19 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			}
 
 		case ^Command_Rect:
-			// fmt.printf("  rect: %v\n", cmd.color)
-			draw_flush(gui, &vertices, &indices)
-
-			// Temporary set draw bounds nd use gl.Clear() to draw a rectangle
-			// TODO rewrite to draw a tinted quad and be able to just add this as another
-			// quad to be drawn by the GPU program; right now this is a lot of GPU calls!
-			gl.Enable(gl.SCISSOR_TEST)
-			gl.Scissor(cmd.rect.x, gui.window_height - cmd.rect.y - cmd.rect.h, cmd.rect.w, cmd.rect.h)
-			gl.ClearColor(f32(cmd.color.r) / 255.0, f32(cmd.color.g) / 255.0, f32(cmd.color.b) / 255.0, f32(cmd.color.a) / 255.0)
-			gl.Clear(gl.COLOR_BUFFER_BIT)
-
-			// Restore viewport
-			gl.Scissor(0, 0, gui.window_width, gui.window_height)
-			gl.Disable(gl.SCISSOR_TEST)
+			// Use the atlas blank character to draw rectangles without changing shaders or flushing the quad lists.
+			dst := Rect{cmd.rect.x, cmd.rect.y, cmd.rect.w, cmd.rect.h}
+			src := default_atlas[DEFAULT_ATLAS_WHITE]
+			gpu_render_texture(gui, &vertices, &indices, dst, src, gui.atlas, cmd.color)
 
 		case ^Command_Icon:
-			// fmt.printf("  icon: %v\n", cmd.id)
+			// CAUTION Don't want to have to switch texture atlas just for these, when text moves to fontstash
 			src := default_atlas[cmd.id]
 			x := cmd.rect.x + (cmd.rect.w - src.w) / 2
 			y := cmd.rect.y + (cmd.rect.h - src.h) / 2
 			gpu_render_texture(gui, &vertices, &indices, Rect{x, y, src.w, src.h}, src, gui.atlas, cmd.color)
 
 		case ^Command_Clip:
-			// fmt.printf("\033[0;31m  clip: %v\033[0m\n", cmd.rect)
 			// Clip information is given in the coordinate system of the entire window.
 			gui.clip = cmd.rect
 
@@ -332,8 +299,6 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 			panic("Graphics drawing encountered mu.Command_Jump!")
 
 		case ^Command_Image:
-			// fmt.printf("  image\n")
-
 			gpu_render_texture(
 				gui,
 				&vertices,
@@ -353,14 +318,10 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	// Restore the 3D OpenGL State
 	gl.Disable(gl.TEXTURE_2D)
 	gl.Disable(gl.SCISSOR_TEST)
-	gl.Enable(gl.DEPTH_TEST)
-	gl.Enable(gl.CULL_FACE)
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gl.Scissor(0, 0, gui.window_width, gui.window_height)
 }
 
-
-// Draw finish up functions
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Init Functions
@@ -384,6 +345,7 @@ gpu_init_default_atlas :: proc(gui: ^Gui) {
 	gui.atlas = texture_create(0, DEFAULT_ATLAS_WIDTH, DEFAULT_ATLAS_HEIGHT)
 
 	gl.GenTextures(1, &gui.atlas.texture_id)
+	log.debugf("Microui atlas located at texture_id: %v", gui.atlas.texture_id)
 	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
 
 	gl.TexImage2D(
@@ -429,22 +391,23 @@ gpu_init_shader :: proc(gui: ^Gui) {
 // These are basic 3D textured quad shaders. So this may cost some additional GPU calls if the rest
 // of the application is using essentially a second copy of this same shader.
 
-Vertex :: struct {
-	pos: glm.vec3,
-	col: glm.vec4, // tinting
+Vertex :: struct #packed {
+	pos: glm.vec2,
 	uv:  glm.vec2,
+	col: glm.vec4, // tinting
 }
 
 shader_3D_vertex: string = `
     #version 330 core
-    layout(location=0) in vec3 a_position;
-    layout(location=1) in vec4 a_color;
-    layout(location=2) in vec2 vertex_uv;
+    layout(location=0) in vec2 a_position;
+    layout(location=1) in vec2 vertex_uv;
+    layout(location=2) in vec4 a_color;
     out vec4 v_color;
     out vec2 UV;
     uniform mat4 u_transform;
-    void main() {	
-    	gl_Position = u_transform * vec4(a_position, 1.0);
+    uniform float z;
+    void main() {
+    	gl_Position = u_transform * vec4(a_position, z, 1.0);
     	v_color = a_color;
     	UV = vertex_uv;
     }
@@ -466,4 +429,3 @@ shader_3D_fragment: string = `
         }
     }
 `
-

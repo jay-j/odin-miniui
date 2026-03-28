@@ -281,7 +281,7 @@ Context :: struct {
 	plot_renderer:                   ^plt.PlotRenderer,
 }
 
-// Stack is a fixed capacity array, with a monitored index "head" position. 
+// Stack is a fixed capacity array, with a monitored index "head" position.
 // The intended operation is to use the push() and pop() to add/remove from this ordered list.
 Stack :: struct($T: typeid, $N: int) {
 	idx:   i32,
@@ -730,7 +730,7 @@ input_sdl_events :: proc(ctx: ^Context, event: SDL.Event) {
 	}
 }
 
-// TODO need to do stuff with ctx.key_pressed_bits and ctx.mouse pressed stuff 
+// TODO need to do stuff with ctx.key_pressed_bits and ctx.mouse pressed stuff
 
 
 /*============================================================================
@@ -1035,7 +1035,7 @@ mouse_over :: proc(ctx: ^Context, rect: Rect) -> bool {
 }
 
 
-// Update variables related to user inputs; hover, mouse
+// Update _id variables related to user inputs; hover, mouse
 update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 	mouseover := mouse_over(ctx, rect)
 
@@ -1070,12 +1070,13 @@ update_control :: proc(ctx: ^Context, id: Id, rect: Rect, opt := Options{}) {
 	}
 }
 
-text :: proc(ctx: ^Context, text: string) {
+text :: proc(ctx: ^Context, text: string, bg_color := Color{0, 0, 0, 0}) {
 	text := text
 	font := ctx.style.font
 	color := ctx.style.colors[.TEXT]
 	layout_begin_column(ctx)
 	layout_row(ctx, {-1}, ctx.text_height(font))
+
 	for len(text) > 0 {
 		w: i32
 		start: int
@@ -1097,14 +1098,17 @@ text :: proc(ctx: ^Context, text: string) {
 				start = i + 1
 			}
 		}
+		if bg_color.a != 0 {
+			draw_rect(ctx, r, bg_color)
+		}
 		draw_text(ctx, font, text[:end], Vec2{r.x, r.y}, color)
 		text = text[end:]
 	}
 	layout_end_column(ctx)
 }
 
-label :: proc(ctx: ^Context, text: string) {
-	draw_control_text(ctx, text, layout_next(ctx), .TEXT)
+label :: proc(ctx: ^Context, text: string, opt := Options{}) {
+	draw_control_text(ctx, text, layout_next(ctx), .TEXT, opt = opt)
 }
 
 
@@ -1405,7 +1409,7 @@ slider :: proc(
 		}
 	}
 	/* clamp and store value, update res */
-	v = clamp(v, low, high);value^ = v
+	v = clamp(v, low, high); value^ = v
 	if last != v {
 		res += {.CHANGE}
 	}
@@ -1491,7 +1495,7 @@ image_scaled_full :: proc(ctx: ^Context, tex: Texture) {
 
 // Display an image, scaled down to fit within the restrictions of the layout but preserving
 // the aspect ratio of the source image.
-// This variant has an additional argument to not show the the full source texture. For example, in 
+// This variant has an additional argument to not show the the full source texture. For example, in
 // with viewport framebuffer usecases where the currently-active view is smaller than the backing texture.
 image_scaled_partial :: proc(ctx: ^Context, tex: Texture, src: Rect) {
 	aspect_ratio := f32(src.w) / f32(src.h)
@@ -1531,6 +1535,65 @@ image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32) {
 
 	draw_image(ctx, tex, r, src, color = {255, 255, 255, 255})
 	return r.w, r.h
+}
+
+
+enum_selector :: proc(ctx: ^Context, value: ^$T) -> (res: Result_Set) where intrinsics.type_is_enum(T) {
+	get_id(ctx, uintptr(value))
+	last := value^
+
+	layout_begin_column(ctx)
+	layout_row(ctx, {20, -1, 20})
+	if .SUBMIT in button(ctx, "<") { 	// Cycle to previous enum value
+		list_prior: T
+		assign_to_list_end: bool
+
+		for next, i in T {
+			if next == last {
+				if i == 0 {
+					assign_to_list_end = true
+				} else {
+					value^ = list_prior
+					break
+				}
+			}
+			list_prior = next
+		}
+		if assign_to_list_end {
+			value^ = list_prior
+		}
+
+	}
+	text(ctx, fmt.tprintf("(%d) %v", int(value^), value^))
+	if .SUBMIT in button(ctx, ">") { 	// Cycle to next enum value
+		first: T
+		next_found: bool = false
+		assignment_made: bool = false
+
+		for next, i in T {
+			if i == 0 {
+				first = next
+			}
+			if next_found {
+				value^ = next
+				assignment_made = true
+				break
+			}
+			if next == last {
+				next_found = true
+			}
+		}
+		if !assignment_made {
+			value^ = first
+		}
+	}
+
+
+	layout_end_column(ctx)
+	if value^ != last {
+		res += {.CHANGE}
+	}
+	return
 }
 
 

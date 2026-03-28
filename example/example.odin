@@ -5,6 +5,8 @@ package miniui_example
 import mu ".."
 import plt "../plot"
 import "core:fmt"
+import "core:log"
+import la "core:math/linalg"
 import glm "core:math/linalg/glsl"
 import "core:time"
 import gl "vendor:OpenGL"
@@ -27,6 +29,7 @@ app := App{}
 
 
 main :: proc() {
+	context.logger = log.create_console_logger()
 	gfx_window_setup(1200, 800)
 	defer gfx_window_quit()
 	app_framerate_control_init()
@@ -47,8 +50,41 @@ main :: proc() {
 		for i in 0 ..< len(x) {
 			y[i] = 0.9 * math.sin(4 * x[i])
 		}
-		sine := plt.dataset_add(&plot, x[:], y[:])
+		// Weird label to include high and low glyphs
+		sine := plt.dataset_add(&plot, x[:], y[:], label = "MAQp sine")
+		plot.axis_labels.x = "x-axis label here"
+		plot.axis_labels.y = "y-axis LABEL HERE IN CAPS"
+		plot.title = "big important plot title right here"
 	}
+	plot2 := plt.plot_init(640, 480)
+	{
+		t := linspace(0, 8, 100)
+		x := make([]f32, len(t))
+		y := make([]f32, len(t))
+		for i in 0 ..< len(t) {
+			x[i] = 0.5 * (3 + t[i]) * la.cos(t[i])
+			y[i] = 0.2 * (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
+		}
+
+		plt.dataset_add(&plot2, x[:], y[:], label = "swoop")
+		plot2.axis_labels.x = "x-axis2 label here"
+		plot2.axis_labels.y = "y-axis2 LABEL HERE IN CAPS"
+		plot2.title = "big important plot title right here 222"
+
+		// also make plot1 more complicated
+		// Weird label to include high and low glyphs
+		plt.dataset_add(&plot, x[:], y[:], label = "MAQp the other one")
+
+		x2 := make([]f32, len(t))
+		y2 := make([]f32, len(t))
+		for i in 0 ..< len(t) {
+			x2[i] = 0.2 * t[i] * t[i] - t[i] - 1
+			y2[i] = 5 * math.cos(t[i])
+		}
+		plt.dataset_add(&plot, x2[:], y2[:], label = "MAQp a third plot with long name")
+		plt.dataset_add(&plot, y2[:], x2[:], label = "MAQp variation")
+	}
+
 
 	main_loop: for {
 		app_framerate_control()
@@ -102,7 +138,7 @@ main :: proc() {
 				mu.checkbox(&gui.ctx, "checkbox_END", &check_end)
 			}
 
-			if mu.window(&gui.ctx, "image here", {760, 200, 300, 300}) {
+			if mu.window(&gui.ctx, "image here", {760, 100, 300, 300}) {
 				mu.layout_row(&gui.ctx, {-1}, 0)
 				mu.label(&gui.ctx, "image below here: make the text really long")
 				mu.layout_row(&gui.ctx, {-1}, 128)
@@ -149,10 +185,16 @@ main :: proc() {
 				}
 			}
 
-			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 400, 300, 300}) {
+			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 300, 500, 500}) {
 				mu.layout_row(&gui.ctx, {-1}, -1)
-				mu.plot(&gui.ctx, &plot, render_cmd = true)
+				mu.plot(&gui.ctx, &plot)
 			}
+
+			if mu.window(&gui.ctx, "second plot window", {600, 600, 320, 240}) {
+				mu.layout_row(&gui.ctx, {-1}, -1)
+				mu.plot(&gui.ctx, &plot2)
+			}
+
 		}
 
 		{
@@ -256,7 +298,7 @@ gfx_window_quit :: proc() {
 
 
 app_framerate_control_init :: proc() {
-	app.time_frame_delta_target = 16667 * time.Microsecond
+	app.time_frame_delta_target = 16700 * time.Microsecond
 	app.time_start = time.tick_now()
 }
 
@@ -361,6 +403,8 @@ viewport_init :: proc(width, height: i32) -> (vp: Viewport) {
 // Activate shader & uniforms; likely to be done only once even if multiple GPU draw calls are actually used
 viewport_draw_prepare :: proc(vp: ^Viewport, width, height: i32) {
 	gl.UseProgram(0)
+
+	gl.BindTexture(gl.TEXTURE_2D, 0) // Defensive, since this is not to use any textures
 
 	gl.UseProgram(vp.shader.program)
 	gl.BindVertexArray(vp.shader.vao)
