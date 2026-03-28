@@ -1283,6 +1283,8 @@ textbox_raw :: proc(ctx: ^Context, textbuf: []u8, textlen: ^int, id: Id, r: Rect
 				ctx.textbox_state.selection[0] = idx
 				if .LEFT in ctx.mouse_pressed_bits && .SHIFT not_in ctx.key_down_bits {
 					ctx.textbox_state.selection[1] = idx
+				} else {
+					ctx.textbox_state.selection[1] = 0
 				}
 			}
 		}

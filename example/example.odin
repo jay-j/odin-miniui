@@ -128,6 +128,9 @@ main :: proc() {
 					mu.label(&gui.ctx, "true")
 				}
 
+				@(static) number64: f64 = 9e-3
+				mu.number(&gui.ctx, &number64, 0.001, "%.6e")
+
 				@(static) number: f32 = 3
 				mu.number(&gui.ctx, &number, 0.5, "%.2f")
 
