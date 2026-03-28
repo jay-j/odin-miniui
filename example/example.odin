@@ -63,7 +63,7 @@ main :: proc() {
 		y := make([]f32, len(t))
 		for i in 0 ..< len(t) {
 			x[i] = 0.5 * (3 + t[i]) * la.cos(t[i])
-			y[i] = 0.5 * (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
+			y[i] = 0.2 * (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
 		}
 
 		plt.dataset_add(&plot2, x[:], y[:], label = "swoop")
@@ -78,11 +78,11 @@ main :: proc() {
 		x2 := make([]f32, len(t))
 		y2 := make([]f32, len(t))
 		for i in 0 ..< len(t) {
-			x[i] = 0.2 * t[i] * t[i] - t[i] - 1
-			y[i] = 5 * math.cos(t[i])
+			x2[i] = 0.2 * t[i] * t[i] - t[i] - 1
+			y2[i] = 5 * math.cos(t[i])
 		}
-		plt.dataset_add(&plot, x[:], y[:], label = "MAQp a third plot with long name")
-		plt.dataset_add(&plot, y[:], x[:], label = "MAQp variation")
+		plt.dataset_add(&plot, x2[:], y2[:], label = "MAQp a third plot with long name")
+		plt.dataset_add(&plot, y2[:], x2[:], label = "MAQp variation")
 	}
 
 

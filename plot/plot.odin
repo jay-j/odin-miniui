@@ -287,6 +287,7 @@ dataset_update_same_pointers_all :: proc(plot: ^Plot) {
 	}
 }
 
+AUTO_SCALE_MARGIN :: 1.05
 
 scale_auto_x :: proc(plot: ^Plot) {
 	low: f32 = max(f32)
@@ -300,7 +301,7 @@ scale_auto_x :: proc(plot: ^Plot) {
 		low = min(low, slice.min(dataset.x[:]))
 		high = max(high, slice.max(dataset.x[:]))
 	}
-	plot.range_x_goal = {low, high}
+	plot.range_x_goal = {AUTO_SCALE_MARGIN * low, AUTO_SCALE_MARGIN * high}
 	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
 	plot.fb.cached = false
 }
@@ -318,7 +319,7 @@ scale_auto_y :: proc(plot: ^Plot) {
 		low = min(low, slice.min(dataset.y[:]))
 		high = max(high, slice.max(dataset.y[:]))
 	}
-	plot.range_y_goal = {low, high}
+	plot.range_y_goal = {AUTO_SCALE_MARGIN * low, AUTO_SCALE_MARGIN * high}
 	plot.animation_timer = PLOT_ZOOM_ANIMATION_RESET
 	plot.fb.cached = false
 }
@@ -339,7 +340,7 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
 		scale_auto_x(plot)
 		scale_auto_y(plot)
-		log.debugf("Calculated plot range: x=%v, y=%v", plot.range_x, plot.range_y)
+		log.debugf("Calculated plot range: x=%v, y=%v", plot.range_x_goal, plot.range_y_goal)
 	}
 
 	if plot.animation_timer > 0 {
