@@ -121,6 +121,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, opt: Options = {.ALIGN_CENTER}) {
 	// WARNING: Since containers don't automatically expand to fit their content,
 	// long labels will get cutoff unless the popup is manually expanded.
 	if popup(ctx, popup_title) {
+		layout_row(ctx, {100})
 		popup_cnt := get_current_container(ctx)
 		if .SUBMIT in button(ctx, "reset view") {
 			plt.scale_auto_x(plot)

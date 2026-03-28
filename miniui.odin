@@ -1540,7 +1540,6 @@ image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32) {
 
 enum_selector :: proc(ctx: ^Context, value: ^$T) -> (res: Result_Set) where intrinsics.type_is_enum(T) {
 	get_id(ctx, uintptr(value))
-	layout_next(ctx)
 	last := value^
 
 	layout_begin_column(ctx)
