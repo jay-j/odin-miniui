@@ -4,7 +4,9 @@ import "core:fmt"
 import "core:log"
 import "core:math"
 import "core:strings"
+import "core:time"
 import plt "plot"
+import ha "plot/handle"
 
 plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options = {.ALIGN_CENTER}) {
 	// show the plot with wrappers for the geometry
@@ -68,6 +70,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	src := Rect{0, 0, min(r.w, plot_texture.width), min(r.h, plot_texture.height)}
 	draw_image(ctx, plot_texture, r, src, color = {255, 255, 255, 255})
 
+	// BUG : render_first only works for one plot in the program
 	@(static) render_first := true
 	if render_cmd | render_first {
 		plt.draw(ctx.plot_renderer, plot, r.w, r.h)
@@ -257,6 +260,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 			draw_text(ctx, ctx.style.font, plot.axis_labels.x, draw_pos, label_color)
 		}
 	}
+	plot_draw_legend(ctx, plot, r)
 	layout_end_column(ctx)
 	pop_id(ctx)
 
@@ -310,9 +314,36 @@ plot_validate_bounds :: proc(plot: ^plt.Plot, px_bounds: Rect) {
 }
 
 
-plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot) {
+// Draw the legend within the specified rectangle.
+plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot, r_given: Rect) {
 	push_id(ctx, uintptr(&plot.fb_legend))
-	r := layout_next(ctx)
+	// if window(ctx, "legend", r_given, opt = {.NO_FRAME, .NO_RESIZE, .NO_CLOSE, .NO_TITLE}) {
+
+	r := r_given
+
+	LEGEND_PADDING :: 2
+	LEGEND_GRAPHIC_WIDTH :: 40
+	legend_text_width: i32 = 0
+	legend_label_quantity: i32 = 0
+	{
+		// PERFORMANCE: A redudant loop through the datasets, and redundant measurement of text width
+		dset_iterator := ha.make_iter(plot.data)
+		for dset in ha.iter_ptr(&dset_iterator) {
+			if dset.label == "" {continue}
+			px := ctx.text_width(ctx.style.font, dset.label)
+			legend_text_width = max(legend_text_width, px)
+			legend_label_quantity += 1
+		}
+	}
+
+	// Calculate the required height based on the quantity of datasets.
+	height_per_label := ctx.text_height(ctx.style.font) + ctx.style.spacing
+	r.h = legend_label_quantity * height_per_label + 2 * LEGEND_PADDING
+	r.w = LEGEND_GRAPHIC_WIDTH + legend_text_width + ctx.style.padding
+
+	// NOTE: The plot is rendered with an alpha background, this color gives it a background.
+	color_background := Color{u8(plot.color_background.r * 255), u8(plot.color_background.g * 255), u8(plot.color_background.b * 255), 255}
+	draw_rect(ctx, r, color_background)
 
 	legend_texture := Texture {
 		texture_id = plot.fb_legend.rgb,
@@ -322,11 +353,23 @@ plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot) {
 		inv_height = 1.0 / f32(plot.fb_legend.height_max),
 	}
 
-	// NOTE: The framebuffer is already rendered by the plt.draw() call
-	src := Rect{0, 0, min(r.w, legend_texture.width), min(r.h, legend_texture.height)}
-	draw_image(ctx, legend_texture, r, src, color = {255, 255, 255, 255})
+	legend_rect := Rect{r.x, r.y, LEGEND_GRAPHIC_WIDTH, r.h}
+	legend_rect = expand_rect(legend_rect, -LEGEND_PADDING)
 
-	draw_text(ctx, ctx.style.font, "legend be here", {r.x, r.y}, {255, 50, 50, 255})
+	src := Rect{0, 0, min(legend_rect.w, legend_texture.width), min(legend_rect.h, legend_texture.height)}
+	draw_image(ctx, legend_texture, legend_rect, src, color = {255, 255, 255, 255})
+	// TODO interaction with the legend to highlight specific datasets on mouseover?
 
+	// TODO add in render caching info
+	plt.draw_legend(ctx.plot_renderer, plot, legend_rect.w, legend_rect.h, height_per_label)
+
+	y: i32 = 2 * LEGEND_PADDING
+	dest_iterator := ha.make_iter(plot.data)
+	for dset in ha.iter_ptr(&dest_iterator) {
+		if dset.label == "" {continue}
+		draw_text(ctx, ctx.style.font, dset.label, {r.x + LEGEND_GRAPHIC_WIDTH + LEGEND_PADDING, r.y + y}, ctx.style.colors[.TEXT])
+		y += height_per_label
+	}
+	// }
 	pop_id(ctx)
 }

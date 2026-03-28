@@ -50,7 +50,8 @@ main :: proc() {
 		for i in 0 ..< len(x) {
 			y[i] = 0.9 * math.sin(4 * x[i])
 		}
-		sine := plt.dataset_add(&plot, x[:], y[:])
+		// Weird label to include high and low glyphs
+		sine := plt.dataset_add(&plot, x[:], y[:], label = "MAQp sine")
 		plot.axis_labels.x = "x-axis label here"
 		plot.axis_labels.y = "y-axis LABEL HERE IN CAPS"
 		plot.title = "big important plot title right here"
@@ -61,15 +62,29 @@ main :: proc() {
 		x := make([]f32, len(t))
 		y := make([]f32, len(t))
 		for i in 0 ..< len(t) {
-			x[i] = (3 + t[i]) * la.cos(t[i])
-			y[i] = (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
+			x[i] = 0.5 * (3 + t[i]) * la.cos(t[i])
+			y[i] = 0.5 * (2 - t[i] * t[i]) * la.sin(1.1 * t[i])
 		}
 
-		plt.dataset_add(&plot2, x[:], y[:])
+		plt.dataset_add(&plot2, x[:], y[:], label = "swoop")
 		plot2.axis_labels.x = "x-axis2 label here"
 		plot2.axis_labels.y = "y-axis2 LABEL HERE IN CAPS"
 		plot2.title = "big important plot title right here 222"
+
+		// also make plot1 more complicated
+		// Weird label to include high and low glyphs
+		plt.dataset_add(&plot, x[:], y[:], label = "MAQp the other one")
+
+		x2 := make([]f32, len(t))
+		y2 := make([]f32, len(t))
+		for i in 0 ..< len(t) {
+			x[i] = 0.2 * t[i] * t[i] - t[i] - 1
+			y[i] = 5 * math.cos(t[i])
+		}
+		plt.dataset_add(&plot, x[:], y[:], label = "MAQp a third plot with long name")
+		plt.dataset_add(&plot, y[:], x[:], label = "MAQp variation")
 	}
+
 
 	main_loop: for {
 		app_framerate_control()
@@ -180,10 +195,6 @@ main :: proc() {
 				mu.plot(&gui.ctx, &plot2, render_cmd = true)
 			}
 
-			if mu.window(&gui.ctx, "legend window", {100, 500, 320, 240}) {
-				mu.layout_row(&gui.ctx, {-1}, -1)
-				mu.plot_draw_legend(&gui.ctx, &plot)
-			}
 		}
 
 		{

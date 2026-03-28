@@ -176,7 +176,7 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	}
 
 	framebuffer_setup(&plot.fb, buff_width, buff_height)
-	framebuffer_setup(&plot.fb_legend, 320, 240) // HACK magic numbers for the legend framebuffer size
+	framebuffer_setup(&plot.fb_legend, 160, 120) // HACK magic numbers for the legend framebuffer size
 
 	// Create the vertex buffers for the grid/ui stuff
 	gl.GenBuffers(1, &plot.vbo_grid_x)
@@ -439,7 +439,6 @@ draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, gri
 
 	plot.fb.cached = true
 
-	draw_legend(rend, plot)
 }
 
 
@@ -559,35 +558,38 @@ calculate_grid :: proc(
 }
 
 
-// Draw the legend in its own little framebuffer but still using the
+// Draw the legend in its own little framebuffer but still using the plotting shader
 // NOTE: Assume the settings and shader program of the main drawing routines are still active; this must be called from within draw()
-draw_legend :: proc(rend: ^PlotRenderer, plot: ^Plot) {
+draw_legend :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height, spacing: i32) {
 	if plot.legend_hidden {return}
-	if plot.fb_legend.cached {return} 	// BUG nocheckin
+	if plot.fb_legend.cached {return}
+
+	gl.UseProgram(rend.line_shader.program)
 
 	// activate the legend framebuffer
 	gl.BindFramebuffer(gl.FRAMEBUFFER, plot.fb_legend.id)
-	gl.Viewport(0, 0, plot.fb_legend.width_max, plot.fb_legend.height_max) // TODO also consider rendering smaller than the max framebuffer size
-	gl.ClearColor(0, 0, 0, 0)
+	gl.Viewport(0, 0, view_width, view_height)
+	gl.ClearColor(0.0, 0.0, 0.0, 0.0)
 	gl.Clear(gl.COLOR_BUFFER_BIT)
 	gl.Clear(gl.DEPTH_BUFFER_BIT)
 
 	// Use an orthographic projection directly in window pixel space
-	u_transform := glm.mat4Ortho3d(0, f32(plot.fb_legend.width_max), f32(plot.fb_legend.height_max), 0, -1.0, 1.0)
-	gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, &u_transform[0, 0])
+	u_transform := glm.mat4Ortho3d(0, f32(view_width), 0, f32(view_height), -1.0, 1.0)
+	gl.UniformMatrix4fv(rend.line_shader.uniforms["u_transform"].location, 1, false, raw_data(&u_transform))
+	gl.Uniform1f(rend.line_shader.uniforms["z"].location, -0.5)
 
 	gl.BindVertexArray(rend.line_shader.vao)
 
-	// for each dataset draw its routine
-	// use a three part line so points have a chance of showing up more
-	dh := f32(plot.fb_legend.height_max) / f32(plot.data.num + 2) // BUG off by one and end conditions
-	y0 := dh
+	// for each dataset draw a little line using the full plotting shader
+	// use a three part line to enable more sophistocated marker shaders
+	dh := f32(spacing)
+	y0 := dh / 2
 
 	dataset_iter := ha.make_iter(plot.data)
 	for dataset in ha.iter_ptr(&dataset_iter) {
 		if dataset_is_empty(dataset) {continue}
 
-		x := []f32{0, f32(plot.fb_legend.width_max / 2), f32(plot.fb_legend.width_max)}
+		x := []f32{0, f32(view_width / 2), f32(view_width)}
 		y := []f32{y0, y0, y0}
 		y0 += dh
 
