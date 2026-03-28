@@ -1538,6 +1538,66 @@ image_raw :: proc(ctx: ^Context, tex: Texture) -> (w, h: i32) {
 }
 
 
+enum_selector :: proc(ctx: ^Context, value: ^$T) -> (res: Result_Set) where intrinsics.type_is_enum(T) {
+	get_id(ctx, uintptr(value))
+	layout_next(ctx)
+	last := value^
+
+	layout_begin_column(ctx)
+	layout_row(ctx, {20, -1, 20})
+	if .SUBMIT in button(ctx, "<") { 	// Cycle to previous enum value
+		list_prior: T
+		assign_to_list_end: bool
+
+		for next, i in T {
+			if next == last {
+				if i == 0 {
+					assign_to_list_end = true
+				} else {
+					value^ = list_prior
+					break
+				}
+			}
+			list_prior = next
+		}
+		if assign_to_list_end {
+			value^ = list_prior
+		}
+
+	}
+	text(ctx, fmt.tprintf("(%d) %v", int(value^), value^))
+	if .SUBMIT in button(ctx, ">") { 	// Cycle to next enum value
+		first: T
+		next_found: bool = false
+		assignment_made: bool = false
+
+		for next, i in T {
+			if i == 0 {
+				first = next
+			}
+			if next_found {
+				value^ = next
+				assignment_made = true
+				break
+			}
+			if next == last {
+				next_found = true
+			}
+		}
+		if !assignment_made {
+			value^ = first
+		}
+	}
+
+
+	layout_end_column(ctx)
+	if value^ != last {
+		res += {.CHANGE}
+	}
+	return
+}
+
+
 @(private)
 _header :: proc(ctx: ^Context, label: string, is_treenode: bool, opt := Options{}) -> Result_Set {
 	id := get_id(ctx, label)
