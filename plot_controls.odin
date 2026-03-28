@@ -8,7 +8,7 @@ import "core:time"
 import plt "plot"
 import ha "plot/handle"
 
-plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options = {.ALIGN_CENTER}) {
+plot :: proc(ctx: ^Context, plot: ^plt.Plot, opt: Options = {.ALIGN_CENTER}) {
 	// show the plot with wrappers for the geometry
 	// send mouse interaction
 	// right click for mode control popup menu
@@ -52,10 +52,6 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	update_control(ctx, id, r, opt)
 
 
-	// BUG: If the size of the container has changed, then it needs to be re-rendered
-
-	render_cmd := render_cmd
-
 	plot_texture := Texture {
 		texture_id = plot.fb.rgb,
 		width      = plot.fb.width_max,
@@ -70,12 +66,7 @@ plot :: proc(ctx: ^Context, plot: ^plt.Plot, render_cmd := false, opt: Options =
 	src := Rect{0, 0, min(r.w, plot_texture.width), min(r.h, plot_texture.height)}
 	draw_image(ctx, plot_texture, r, src, color = {255, 255, 255, 255})
 
-	// BUG : render_first only works for one plot in the program
-	@(static) render_first := true
-	if render_cmd | render_first {
-		plt.draw(ctx.plot_renderer, plot, r.w, r.h)
-		render_first = false
-	}
+	plt.draw(ctx.plot_renderer, plot, r.w, r.h)
 
 	@(static) mouse_start: Vec2
 

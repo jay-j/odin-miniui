@@ -67,6 +67,7 @@ Plot :: struct {
 	animation_timer:        int,
 	range_x_goal:           [2]f32,
 	range_y_goal:           [2]f32,
+	last_render_size:       [2]i32,
 
 	// TODO Change these into the new small dynamic arrays once released
 	grid_x:                 [MAX_GRID_LABELS]f32,
@@ -328,6 +329,12 @@ scale_auto_y :: proc(plot: ^Plot) {
 // called again if something in the plot has changed; otherwise the framebuffer can just
 // be displayed again.
 draw :: proc(rend: ^PlotRenderer, plot: ^Plot, view_width, view_height: i32, grid: bool = true) {
+
+	if view_width != plot.last_render_size.x || view_height != plot.last_render_size.y {
+		plot.fb.cached = false
+		plot.last_render_size.x = view_width
+		plot.last_render_size.y = view_height
+	}
 
 	if plot.range_x[0] == 0 && plot.range_x[1] == 0 {
 		scale_auto_x(plot)

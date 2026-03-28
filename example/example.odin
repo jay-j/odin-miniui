@@ -187,12 +187,12 @@ main :: proc() {
 
 			if mu.window(&gui.ctx, "Plot Demo with Controls", {600, 300, 500, 500}) {
 				mu.layout_row(&gui.ctx, {-1}, -1)
-				mu.plot(&gui.ctx, &plot, render_cmd = true)
+				mu.plot(&gui.ctx, &plot)
 			}
 
 			if mu.window(&gui.ctx, "second plot window", {600, 600, 320, 240}) {
 				mu.layout_row(&gui.ctx, {-1}, -1)
-				mu.plot(&gui.ctx, &plot2, render_cmd = true)
+				mu.plot(&gui.ctx, &plot2)
 			}
 
 		}
