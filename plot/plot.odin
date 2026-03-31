@@ -257,6 +257,7 @@ dataset_update_ptr :: proc(dset: ^Dataset, x, y: []f32) {
 dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []f32) {
 	ptr := ha.get_ptr(plot.data, dset_handle)
 	dataset_update_ptr(ptr, x[:], y[:])
+	plot.fb.cached = false
 }
 
 
@@ -264,6 +265,7 @@ dataset_update_handle :: proc(plot: ^Plot, dset_handle: Dataset_Handle, x, y: []
 dataset_update_same_pointers :: proc(plot: ^Plot, dset_handle: Dataset_Handle) {
 	ptr := ha.get_ptr(plot.data, dset_handle)
 	dataset_update_ptr(ptr, ptr.x, ptr.y)
+	plot.fb.cached = false
 }
 
 
@@ -273,6 +275,7 @@ dataset_update_same_pointers_all :: proc(plot: ^Plot) {
 	for dset in ha.iter_ptr(&dataset_iter) {
 		dataset_update_ptr(dset, dset.x, dset.y)
 	}
+	plot.fb.cached = false
 }
 
 AUTO_SCALE_MARGIN :: 1.05
