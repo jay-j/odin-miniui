@@ -177,7 +177,7 @@ plot_init :: proc(buff_width, buff_height: i32, color_background := PLOT_DEFAULT
 	}
 
 	framebuffer_setup(&plot.fb, buff_width, buff_height)
-	framebuffer_setup(&plot.fb_legend, 160, 120) // HACK magic numbers for the legend framebuffer size
+	framebuffer_setup(&plot.fb_legend, 240, 512) // HACK magic numbers for the legend framebuffer size
 
 	// Create the vertex buffers for the grid/ui stuff
 	gl.GenBuffers(1, &plot.vbo_grid_x)

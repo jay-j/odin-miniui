@@ -373,7 +373,11 @@ plot_draw_legend :: proc(ctx: ^Context, plot: ^plt.Plot, r_given: Rect) {
 	// TODO interaction with the legend to highlight specific datasets on mouseover?
 
 	// TODO add in render caching info
-	plt.draw_legend(ctx.plot_renderer, plot, legend_rect.w, legend_rect.h, height_per_label)
+	plt.draw_legend(ctx.plot_renderer, plot, src.w, src.h, height_per_label)
+
+	if legend_texture.height < legend_rect.h {
+		log.errorf("Legend texture size of (%v x %v) is too small and it will be messed up", legend_texture.width, legend_texture.height)
+	}
 
 	y: i32 = 2 * LEGEND_PADDING
 	dest_iterator := ha.make_iter(plot.data)
