@@ -1333,6 +1333,7 @@ parse_real_f64 :: #force_inline proc(s: string) -> (f64, bool) {
 number_textbox :: proc {
 	number_textbox_f32,
 	number_textbox_f64,
+	number_textbox_i64,
 }
 
 number_textbox_f32 :: proc(ctx: ^Context, value: ^f32, r: Rect, id: Id, fmt_string: string) -> bool {
@@ -1363,6 +1364,24 @@ number_textbox_f64 :: proc(ctx: ^Context, value: ^f64, r: Rect, id: Id, fmt_stri
 		res := textbox_raw(ctx, ctx.number_edit_buf[:], &ctx.number_edit_len, id, r, {})
 		if .SUBMIT in res || ctx.focus_id != id {
 			value^, _ = parse_real_f64(string(ctx.number_edit_buf[:ctx.number_edit_len]))
+			ctx.number_edit_id = 0
+		} else {
+			return true
+		}
+	}
+	return false
+}
+
+number_textbox_i64 :: proc(ctx: ^Context, value: ^i64, r: Rect, id: Id, fmt_string: string = "%d") -> bool {
+	if ctx.mouse_pressed_bits == {.LEFT} && .SHIFT in ctx.key_down_bits && ctx.hover_id == id {
+		ctx.number_edit_id = id
+		nstr := fmt.bprintf(ctx.number_edit_buf[:], fmt_string, value^)
+		ctx.number_edit_len = len(nstr)
+	}
+	if ctx.number_edit_id == id {
+		res := textbox_raw(ctx, ctx.number_edit_buf[:], &ctx.number_edit_len, id, r, {})
+		if .SUBMIT in res || ctx.focus_id != id {
+			value^, _ = strconv.parse_i64(string(ctx.number_edit_buf[:ctx.number_edit_len]))
 			ctx.number_edit_id = 0
 		} else {
 			return true
@@ -1407,7 +1426,11 @@ slider :: proc(
 	if ctx.focus_id == id && ctx.mouse_down_bits == {.LEFT} {
 		v = low + T(ctx.mouse_pos.x - base.x) * (high - low) / T(base.w)
 		if step != 0.0 {
-			v = math.floor((v + step / 2) / step) * step
+			when intrinsics.type_is_float(T) {
+				v = math.floor((v + step / 2) / step) * step
+			} else {
+				v = v - (v % step)
+			}
 		}
 	}
 	/* clamp and store value, update res */

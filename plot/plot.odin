@@ -127,6 +127,7 @@ render_init :: proc(allocator := context.allocator) -> (rend: ^PlotRenderer) {
 	rend.line_shader.uniforms = gl.get_uniforms_from_program(rend.line_shader.program)
 
 	gl.GenVertexArrays(1, &rend.line_shader.vao)
+	gl.UseProgram(0)
 
 	// render_init_font(rend)
 

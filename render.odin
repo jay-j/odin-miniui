@@ -73,6 +73,7 @@ draw_prepare :: proc(gui: ^Gui, window_width, window_height: i32) {
 	gl.VertexAttribPointer(2, 4, gl.FLOAT, false, size_of(Vertex), offset_of(Vertex, col)) // where is color? stride?
 
 	// Bind this texture by default
+	gl.ActiveTexture(gl.TEXTURE0)
 	gl.BindTexture(gl.TEXTURE_2D, gui.atlas.texture_id)
 	gui.last_texture_id = gui.atlas.texture_id
 
@@ -257,6 +258,9 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Disable(gl.DEPTH_TEST)
 	gl.Disable(gl.CULL_FACE)
 	gl.Enable(gl.TEXTURE_2D)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.BlendEquation(gl.FUNC_ADD)
 
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gui.clip = unclipped_rect
@@ -320,6 +324,7 @@ draw :: proc(gui: ^Gui, allocator := context.allocator) {
 	gl.Disable(gl.SCISSOR_TEST)
 	gl.Viewport(0, 0, gui.window_width, gui.window_height)
 	gl.Scissor(0, 0, gui.window_width, gui.window_height)
+	gl.UseProgram(0)
 }
 
 
@@ -384,6 +389,7 @@ gpu_init_shader :: proc(gui: ^Gui) {
 	gl.GenVertexArrays(1, &gui.shader.vao)
 	gl.GenBuffers(1, &gui.shader.vbo)
 	gl.GenBuffers(1, &gui.shader.ebo)
+	gl.UseProgram(0)
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
